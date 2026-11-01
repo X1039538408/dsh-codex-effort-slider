@@ -1414,9 +1414,17 @@ section("12d. 模型名跨滑轨上下两层交错");
   ok(css.includes(".ces-name-token{white-space:nowrap}"), "[12d] 词内不断行（竖排单字的直接原因）");
   ok(css.includes("word-break:keep-all"), "[12d] 名字按词边界换行");
   ok(css.includes(".ces-named-labels--band"), "[12d] 交错 band 有独立样式");
-  ok(css.includes("calc(200% / var(--ces-count) - 4px)"), "[12d] 交错模式每个名字占两格宽");
+  ok(css.includes("calc(200% / var(--ces-count))"), "[12d] 交错模式每个名字占两格宽");
+  ok(css.includes("transform:translateX(-50%)"), "[12d] 交错模式名字以刻度中心为基准居中");
   ok(css.includes("18%,transparent") && css.includes("inset 0 0 0 1px"), "[12d] 选中档位高亮加强（底色 + 描边）");
   ok(css.includes("data-overflow='long'"), "[12d] 超长单词仍有兜底换行");
+  // 纯函数：边缘档位钳制在内容区内（名字宽两格，居中会溢出左右各一格）
+  const clamp = internals.clampBandLeft;
+  eq(clamp(0, 20), 5, "[12d] 首档中心钳到半格处（不溢出左边界）");
+  eq(clamp(19, 20), 95, "[12d] 末档中心钳到 100-半格处（不溢出右边界）");
+  eq(clamp(10, 20), 52.5, "[12d] 中间档位保持自己的刻度中心");
+  eq(clamp(0, 1), 50, "[12d] 单档退化为居中");
+  eq(clamp(0, 0), 50, "[12d] 空列表退化为居中");
 }
 
 

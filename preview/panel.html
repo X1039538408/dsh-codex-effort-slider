@@ -76,8 +76,8 @@ body[data-ds-dark-theme] .ces-set{background:var(--dsw-alias-bg-base,#24262c);co
 .mock-named-content{box-sizing:border-box;width:100%;container-type:inline-size;container-name:mock-rail}
 .mock-named-labels{display:grid;grid-template-columns:repeat(var(--mock-count),minmax(0,1fr));align-items:stretch;width:100%}
 /* 跨滑轨两层交错（模型数多、单层一格放不下一个词时启用）：偶数档在上、奇数档在下 */
-.mock-named-labels--band{display:block;position:relative;box-sizing:border-box;width:100%;height:26px}
-.mock-named-labels--band .mock-named-label{position:absolute;top:0;width:calc(200% / var(--mock-count) - 4px);min-height:26px;transform:translateX(-50%);padding:0 3px;overflow-wrap:normal;word-break:keep-all;hyphens:none}
+.mock-named-labels--band{display:block;position:relative;box-sizing:border-box;width:100%;height:28px}
+.mock-named-labels--band .mock-named-label{position:absolute;top:0;transform:translateX(-50%);width:calc(200% / var(--mock-count));min-height:28px;padding:0 5px;overflow-wrap:normal;word-break:keep-all;hyphens:none;box-sizing:border-box}
 .mock-name-token{white-space:nowrap}
 .mock-named-labels[data-overflow='long'] .mock-named-label{overflow-wrap:anywhere}
 .mock-named-label{box-sizing:border-box;width:100%;min-width:0;max-width:100%;min-height:18px;padding:0 2px 1px;display:flex;align-items:center;justify-content:center;text-align:center;white-space:normal;word-break:keep-all;overflow-wrap:break-word;hyphens:none;font-size:10px;line-height:11px;color:var(--dsw-alias-label-secondary);cursor:pointer;border-radius:4px;transition:background-color .12s ease,color .12s ease}
@@ -86,7 +86,7 @@ body[data-ds-dark-theme] .ces-set{background:var(--dsw-alias-bg-base,#24262c);co
 @container mock-rail (max-width:600px){.mock-named-labels[data-density='compact'] .mock-named-label{font-size:9px;line-height:10px}.mock-named-labels[data-density='dense'] .mock-named-label{font-size:8px;line-height:9px}}
 @container mock-rail (max-width:400px){.mock-named-labels[data-density='compact'] .mock-named-label{font-size:8px;line-height:9px}.mock-named-labels[data-density='dense'] .mock-named-label{font-size:8px;line-height:9px}}
 .mock-named-label[data-selected='1']{width:calc(100% - 4px);justify-self:center;border-radius:6px;color:var(--mock-pick);font-weight:600;box-shadow:inset 0 0 0 1px color-mix(in srgb,var(--mock-pick) 42%,transparent);background:color-mix(in srgb,var(--mock-pick) 18%,transparent)}
-.mock-named-labels--band .mock-named-label[data-selected='1']{width:calc(200% / var(--mock-count) - 4px)}
+.mock-named-labels--band .mock-named-label[data-selected='1']{width:calc(200% / var(--mock-count));background-clip:content-box}
 .mock-named-label:hover{background:color-mix(in srgb,var(--mock-pick) 7%,transparent)}
 .mock-model-hit{position:relative;display:block;height:20px;touch-action:none;user-select:none;border-radius:6px}
 .mock-model-block{padding:1px 8px 3px}
@@ -966,7 +966,11 @@ render();
             label.appendChild(token);
           }
         }
-        label.style.left = (((index + 0.5) / list.length) * 100) + "%";
+        /* 名字宽两格，居中会向左右各溢出半格：首末档必须内收（与插件 clampBandLeft 一致）。 */
+        const pos = ((index + 0.5) / list.length) * 100;
+        const halfCell = 100 / list.length;
+        const left = Math.max(halfCell, Math.min(100 - halfCell, pos));
+        label.style.left = left + "%";
         label.setAttribute("data-band", index % 2 === 0 ? "top" : "bottom");
         (index % 2 === 0 ? modelLabels : modelLabelsBottom).appendChild(label);
       } else {
