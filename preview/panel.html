@@ -72,15 +72,21 @@ body[data-ds-dark-theme] .ces-set{background:var(--dsw-alias-bg-base,#24262c);co
 @keyframes mock-spark{0%{opacity:0;transform:translate3d(0,0,0) scale(.6)}30%{opacity:1}100%{opacity:0;transform:translate3d(var(--dx,0),var(--dy,-10px),0) scale(1)}}
 /* 三层菜单中的紧凑命名轨：按选项数等分宽度，名称完整换行 */
 .mock-named-viewport{width:100%;min-width:0;overflow:visible}
+.mock-name-stack{display:block;width:100%}
 .mock-named-content{box-sizing:border-box;width:100%;container-type:inline-size;container-name:mock-rail}
 .mock-named-labels{display:grid;grid-template-columns:repeat(var(--mock-count),minmax(0,1fr));align-items:stretch;width:100%}
-.mock-named-label{box-sizing:border-box;width:100%;min-width:0;max-width:100%;min-height:18px;padding:0 2px 1px;display:flex;align-items:center;justify-content:center;text-align:center;white-space:normal;word-break:normal;overflow-wrap:break-word;hyphens:manual;font-size:10px;line-height:11px;color:var(--dsw-alias-label-secondary);cursor:pointer;border-radius:4px;transition:background-color .12s ease,color .12s ease}
-.mock-named-labels[data-density='compact'] .mock-named-label,.mock-named-labels[data-density='dense'] .mock-named-label{overflow-wrap:anywhere}
+/* 跨滑轨两层交错（模型数多、单层一格放不下一个词时启用）：偶数档在上、奇数档在下 */
+.mock-named-labels--band{display:block;position:relative;box-sizing:border-box;width:100%;height:26px}
+.mock-named-labels--band .mock-named-label{position:absolute;top:0;width:calc(200% / var(--mock-count) - 4px);min-height:26px;transform:translateX(-50%);padding:0 3px;overflow-wrap:normal;word-break:keep-all;hyphens:none}
+.mock-name-token{white-space:nowrap}
+.mock-named-labels[data-overflow='long'] .mock-named-label{overflow-wrap:anywhere}
+.mock-named-label{box-sizing:border-box;width:100%;min-width:0;max-width:100%;min-height:18px;padding:0 2px 1px;display:flex;align-items:center;justify-content:center;text-align:center;white-space:normal;word-break:keep-all;overflow-wrap:break-word;hyphens:none;font-size:10px;line-height:11px;color:var(--dsw-alias-label-secondary);cursor:pointer;border-radius:4px;transition:background-color .12s ease,color .12s ease}
 .mock-named-labels[data-density='compact'] .mock-named-label{font-size:10px;line-height:10px}
 .mock-named-labels[data-density='dense'] .mock-named-label{font-size:9px;line-height:9px}
 @container mock-rail (max-width:600px){.mock-named-labels[data-density='compact'] .mock-named-label{font-size:9px;line-height:10px}.mock-named-labels[data-density='dense'] .mock-named-label{font-size:8px;line-height:9px}}
 @container mock-rail (max-width:400px){.mock-named-labels[data-density='compact'] .mock-named-label{font-size:8px;line-height:9px}.mock-named-labels[data-density='dense'] .mock-named-label{font-size:8px;line-height:9px}}
-.mock-named-label[data-selected='1']{width:calc(100% - 4px);justify-self:center;border-radius:6px;color:var(--mock-pick);font-weight:600;background:color-mix(in srgb,var(--mock-pick) 11%,transparent)}
+.mock-named-label[data-selected='1']{width:calc(100% - 4px);justify-self:center;border-radius:6px;color:var(--mock-pick);font-weight:600;box-shadow:inset 0 0 0 1px color-mix(in srgb,var(--mock-pick) 42%,transparent);background:color-mix(in srgb,var(--mock-pick) 18%,transparent)}
+.mock-named-labels--band .mock-named-label[data-selected='1']{width:calc(200% / var(--mock-count) - 4px)}
 .mock-named-label:hover{background:color-mix(in srgb,var(--mock-pick) 7%,transparent)}
 .mock-model-hit{position:relative;display:block;height:20px;touch-action:none;user-select:none;border-radius:6px}
 .mock-model-block{padding:1px 8px 3px}
@@ -124,9 +130,12 @@ body[data-ds-dark-theme] .ces-set{background:var(--dsw-alias-bg-base,#24262c);co
       </button>
       <div class="mock-model-block" id="modelSlot">
         <div class="mock-named-viewport"><div class="mock-named-content" id="modelContent">
-          <div class="mock-named-labels" id="modelLabels"></div>
-          <div class="mock-model-hit" id="modelHit" role="slider" tabindex="0" aria-label="模型" aria-valuemin="0" aria-valuemax="5" aria-valuenow="0" aria-valuetext="Kimi K3.1 Pro">
-            <div class="mock-model-rail" id="modelRail"><div class="mock-model-fill" id="modelFill"></div><div class="mock-model-knob" id="modelKnob"></div></div>
+          <div class="mock-name-stack" id="modelNameStack">
+            <div class="mock-named-labels" id="modelLabels"></div>
+            <div class="mock-model-hit" id="modelHit" role="slider" tabindex="0" aria-label="模型" aria-valuemin="0" aria-valuemax="5" aria-valuenow="0" aria-valuetext="Kimi K3.1 Pro">
+              <div class="mock-model-rail" id="modelRail"><div class="mock-model-fill" id="modelFill"></div><div class="mock-model-knob" id="modelKnob"></div></div>
+            </div>
+            <div class="mock-named-labels mock-named-labels--band" id="modelLabelsBottom" hidden></div>
           </div>
         </div></div>
       </div>
@@ -802,7 +811,13 @@ render();
     { name: "Pixel Codex", models: ["GPT-6.1 Sol", "GPT-6 Astra", "GPT-6 Luna"] },
     { name: "WOYAO · Claude", models: ["Claude Sonnet 4", "Claude Opus 4"] },
     { name: "WOYAO · GPT", models: ["GPT-6.1 Sol", "GPT-6 Astra"] },
-    { name: "WOYAO · 通用", models: ["Gemini 3.8 Flash High", "Gemini 4 Argon", "Grok 4.7", "GLM 5.3", "DeepSeek V4.1 Flash (1017)", "GPT-5.6 Sol", "GPT-5.6 Terra", "GPT-5.6 Luna", "GPT-Reserve (Experimental)"] },
+    { name: "WOYAO · 通用", models: [
+      /* 20 个模型：复现「单层等分会把名字压成竖排单字」的场景，验证上下两层交错。 */
+      "Gemini 3.8 Flash High", "Gemini 4 Argon", "Grok 4.7", "GLM 5.3", "GLM 5.3-pro",
+      "DeepSeek V4.1 Flash (1017)", "DeepSeek V4 Pro", "GPT-5.6 Sol", "GPT-5.6 Terra", "GPT-5.6 Luna",
+      "Kimi K3.1 Pro", "Kimi K2.8 Preview", "MiMo V2", "MiMo V2.5", "MiniMax M2.7",
+      "Hunyuan V4", "Hunyuan V4 Pro", "GLM 5.3 Vision", "GPT-Reserve (Experimental)", "MiMo V2 Flash",
+    ] },
     { name: "ChatGPT subscription", models: ["ChatGPT Subscription"] },
     { name: "Kimi subscription", models: ["Kimi K3.1 Pro", "Kimi K3.1 Pro Highspeed", "Kimi K3", "Kimi K3-256K", "Kimi K2.8 Preview", "Kimi K2.7 Code Highspeed"] },
   ];
@@ -814,6 +829,7 @@ render();
   const providerKnob = document.getElementById("providerKnob");
   const modelContent = document.getElementById("modelContent");
   const modelLabels = document.getElementById("modelLabels");
+  const modelLabelsBottom = document.getElementById("modelLabelsBottom");
   const modelHit = document.getElementById("modelHit");
   const modelRail = document.getElementById("modelRail");
   const modelFill = document.getElementById("modelFill");
@@ -914,14 +930,50 @@ render();
     if (list.length >= 10) modelLabels.setAttribute("data-density", "dense");
     else if (list.length >= 7) modelLabels.setAttribute("data-density", "compact");
     modelLabels.replaceChildren();
+    modelLabelsBottom.replaceChildren();
+    /* 模拟真实插件的 staggerRowsFor：(内容宽 + 名带加宽 160) ÷ 模型数 < 52px 就切成上下两层。
+       首次渲染 clientWidth 可能为 0，用 520 兜底（与插件里的 NAMED_BAND_FALLBACK 一致）。 */
+    const availableWidth = modelContent.clientWidth || 520;
+    const stagger = list.length > 1 && availableWidth / list.length < 52 ? 2 : 1;
+    const twoBands = stagger >= 2;
+    modelLabels.classList.toggle("mock-named-labels--band", twoBands);
+    modelLabels.setAttribute("data-band", "top");
+    modelLabelsBottom.hidden = !twoBands;
+    if (twoBands) {
+      modelLabels.style.setProperty("--mock-count", String(Math.max(1, list.length)));
+      modelLabelsBottom.setAttribute("data-density", modelLabels.getAttribute("data-density") || "");
+      modelLabelsBottom.style.setProperty("--mock-count", String(Math.max(1, list.length)));
+      modelLabelsBottom.removeAttribute("data-density");
+      const density = modelLabels.getAttribute("data-density");
+      if (density) modelLabelsBottom.setAttribute("data-density", density);
+    }
     list.forEach((name, index) => {
       const label = document.createElement("span");
       label.className = "mock-named-label";
+      label.setAttribute("data-index", String(index));
       label.setAttribute("data-selected", index === selected ? "1" : "0");
       label.title = name;
-      label.textContent = name;
+      if (twoBands) {
+        /* 词内不断行：只在分隔符处换行，避免竖排单字。 */
+        for (const piece of name.split(/([-\s./·_])/)) {
+          if (!piece) continue;
+          if (/^[-\s./·_]$/.test(piece)) {
+            label.appendChild(document.createTextNode(piece));
+          } else {
+            const token = document.createElement("span");
+            token.className = "mock-name-token";
+            token.textContent = piece;
+            label.appendChild(token);
+          }
+        }
+        label.style.left = (((index + 0.5) / list.length) * 100) + "%";
+        label.setAttribute("data-band", index % 2 === 0 ? "top" : "bottom");
+        (index % 2 === 0 ? modelLabels : modelLabelsBottom).appendChild(label);
+      } else {
+        label.textContent = name;
+        modelLabels.appendChild(label);
+      }
       label.addEventListener("click", (event) => { event.preventDefault(); event.stopPropagation(); commitModel(index); });
-      modelLabels.appendChild(label);
     });
     modelHit.style.width = "100%";
     modelRail.style.width = "100%";

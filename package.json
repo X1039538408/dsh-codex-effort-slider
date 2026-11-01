@@ -1,6 +1,6 @@
 {
   "name": "dsh-codex-effort-slider-plus",
-  "version": "1.10.0",
+  "version": "1.11.0",
   "description": "推理等级主滑轨 + 供应商/模型命名滑轨（独立分支版）/ Reasoning effort slider with named provider and model rails for DeepSeek Harness",
   "license": "MIT",
   "author": "X1039538408",

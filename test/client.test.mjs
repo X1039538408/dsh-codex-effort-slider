@@ -1107,7 +1107,7 @@ function __clickLabel(node) { node.fire("onClick", {}); }
   const modelSection = n.modelHost.children[0];
   eq(modelSection.children.length, 1, "[12c] 模型区只剩一个视口，不再重复显示「模型」小标题");
   eq(modelSection.children[0].getAttribute("data-ces-part"), "model-viewport", "[12c] 模型区首个子节点直接是名称视口");
-  ok(ctx.internals.CSS.includes("word-break:normal;overflow-wrap:break-word") && ctx.internals.CSS.includes("data-density='dense'") && ctx.internals.CSS.includes("@container ces-rail (max-width:600px)"), "[12c] 标签优先自然换行、支持密集字号并按宽度自适应");
+  ok(ctx.internals.CSS.includes("word-break:keep-all") && ctx.internals.CSS.includes("data-density='dense'") && ctx.internals.CSS.includes("@container ces-rail (max-width:600px)"), "[12c] 标签词内不断行、支持密集字号并按宽度自适应");
   ok(ctx.internals.CSS.includes("min-width:0;max-width:100%") && ctx.internals.CSS.includes("width:calc(100% - 4px)"), "[12c] 标签不会跨列溢出，选中态使用内缩 chip");
   ok(ctx.internals.CSS.includes("grid-template-rows:minmax(0,1fr)") && ctx.internals.CSS.includes("padding-block:2px"), "[12c] 竖轨与名称列表共用同一拉伸行并留出上下内缩");
   const knob = n.providerHost.querySelector('div[data-ces-part="provider-knob"]');
@@ -1152,8 +1152,8 @@ function __clickLabel(node) { node.fire("onClick", {}); }
     }),
   });
   const menu = ctx.menu.menu;
-  // 原中心 300+100=400，加宽后 420 → 目标左 190
-  eq(menu.style.left, "190px", "[12c] 加宽后菜单钉在加宽前的中心");
+  // 原中心 300+100=400，加宽后 200+220(右栏)+160(名带) = 580 → 目标左 400-290 = 110
+  eq(menu.style.left, "110px", "[12c] 加宽后菜单钉在加宽前的中心");
   eq(menu.style.right, "auto", "[12c] 钉中心时清掉右侧锚定");
   ctx.react.unmount();
 }
@@ -1352,7 +1352,74 @@ function __clickLabel(node) { node.fire("onClick", {}); }
   ctx.react.unmount();
 }
 
-section("13. 宿主半边（lib/index.js）");
+section("12d. 模型名跨滑轨上下两层交错");
+{
+  // 纯函数：单层放不下一个词（<52px）才切两层
+  const { internals } = await setup();
+  const rows = internals.staggerRowsFor;
+  eq(rows(520, 10), 1, "[12d] 520px 放 10 个：每格 52px，仍是单层");
+  eq(rows(520, 11), 2, "[12d] 520px 放 11 个：每格 47px，切两层");
+  eq(rows(520, 20), 2, "[12d] 520px 放 20 个：切两层");
+  eq(rows(360, 5), 1, "[12d] 五个模型永远单层（与现有观感一致）");
+  eq(rows(0, 20), 1, "[12d] 宽度未知时不切层（避免误判）");
+  eq(rows(520, 1), 1, "[12d] 单个模型单层");
+  eq(rows(520, 0), 1, "[12d] 空列表单层");
+}
+{
+  // 十个模型：不写 data-stagger，仍是单层 grid（回归保护）
+  const tenModels = Array.from({ length: 10 }, (_, i) => ({ id: "m" + i, name: "Model-" + (i + 1) }));
+  const groups = [
+    { id: "p0", name: "P0", models: tenModels },
+    { id: "p1", name: "P1", models: [{ id: "x", name: "X" }] },
+  ];
+  const ctx = await setup({
+    host: { snapshot: { current: { provider: "p0", model: "m0" }, groups, status: "ready", failures: [], pending: null, error: null } },
+  });
+  const content = ctx.menu.menu.querySelector('div[data-ces-part="model-viewport"]').children[0];
+  eq(content.children.length, 2, "[12d] 十个模型：单层名字带 + 滑轨两个子节点");
+  eq(content.children[0].getAttribute("data-stagger") ?? null, null, "[12d] 十个模型仍走单层结构（无 data-stagger）");
+  eq(content.children[0].querySelectorAll('span[data-ces-part="model-label"]').length, 10, "[12d] 十个名字都在同一层");
+  ctx.react.unmount();
+}
+{
+  // 二十个模型：拆成上/下两个 band，偶数档在上、奇数档在下，水平位置仍对准自己的刻度
+  const manyModels = Array.from({ length: 20 }, (_, i) => ({ id: "m" + i, name: "Model-" + (i + 1) }));
+  const groups = [
+    { id: "p0", name: "P0", models: manyModels },
+    { id: "p1", name: "P1", models: [{ id: "x", name: "X" }] },
+  ];
+  const ctx = await setup({
+    host: { snapshot: { current: { provider: "p0", model: "m0" }, groups, status: "ready", failures: [], pending: null, error: null } },
+  });
+  const content = ctx.menu.menu.querySelector('div[data-ces-part="model-viewport"]').children[0];
+  const order = Array.from(content.children).map((node) => node.getAttribute("data-band") || node.getAttribute("data-ces-part"));
+  eq(order.join(">"), "top>model-track>bottom", "[12d] 滑轨正好夹在上下两层名字之间");
+  const bands = [content.children[0], content.children[2]];
+  eq(bands[0].getAttribute("data-band"), "top", "[12d] 第一个名字带是上层");
+  eq(bands[1].getAttribute("data-band"), "bottom", "[12d] 第二个名字带是下层");
+  eq(bands[0].getAttribute("data-stagger"), "2", "[12d] 交错层数标记为 2");
+  const topLabels = bands[0].querySelectorAll('span[data-ces-part="model-label"]');
+  const bottomLabels = bands[1].querySelectorAll('span[data-ces-part="model-label"]');
+  eq(topLabels.length, 10, "[12d] 上层 10 个名字（偶数档）");
+  eq(bottomLabels.length, 10, "[12d] 下层 10 个名字（奇数档）");
+  eq(topLabels[0].getAttribute("data-index"), "0", "[12d] 上层首个是第 0 档");
+  eq(bottomLabels[0].getAttribute("data-index"), "1", "[12d] 下层首个是第 1 档");
+  eq(topLabels[1].getAttribute("data-index"), "2", "[12d] 上层第二个是第 2 档");
+  ctx.react.unmount();
+}
+{
+  // CSS 契约：词内不断行、交错 band、选中高亮加强
+  const { internals } = await setup();
+  const css = internals.CSS;
+  ok(css.includes(".ces-name-token{white-space:nowrap}"), "[12d] 词内不断行（竖排单字的直接原因）");
+  ok(css.includes("word-break:keep-all"), "[12d] 名字按词边界换行");
+  ok(css.includes(".ces-named-labels--band"), "[12d] 交错 band 有独立样式");
+  ok(css.includes("calc(200% / var(--ces-count) - 4px)"), "[12d] 交错模式每个名字占两格宽");
+  ok(css.includes("18%,transparent") && css.includes("inset 0 0 0 1px"), "[12d] 选中档位高亮加强（底色 + 描边）");
+  ok(css.includes("data-overflow='long'"), "[12d] 超长单词仍有兜底换行");
+}
+
+
 {
   const hostPath = fileURLToPath(new URL("../lib/index.js", import.meta.url));
   const mod = await import(pathToFileURL(hostPath).href + `?t=${Date.now()}`);
