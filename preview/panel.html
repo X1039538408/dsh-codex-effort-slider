@@ -76,14 +76,13 @@ body[data-ds-dark-theme] .ces-set{background:var(--dsw-alias-bg-base,#24262c);co
 .mock-named-content{box-sizing:border-box;width:100%;container-type:inline-size;container-name:mock-rail}
 .mock-named-labels{display:grid;grid-template-columns:repeat(var(--mock-count),minmax(0,1fr));align-items:stretch;width:100%}
 /* 跨滑轨两层交错（模型数多、单层一格放不下一个词时启用）：偶数档在上、奇数档在下。
-   cell 对准刻度中心并带一条连接线；名字按内容自适应宽度（最多两格），横向不铺满。 */
-.mock-named-labels--band{display:block;position:relative;box-sizing:border-box;width:100%;height:44px}
-.mock-named-cell{position:absolute;top:0;transform:translateX(-50%);width:calc(100% / var(--mock-count));height:100%;box-sizing:border-box;display:flex;flex-direction:column;align-items:center;justify-content:flex-end;padding:0 5px}
-.mock-named-labels--band:last-child .mock-named-cell{flex-direction:column-reverse;justify-content:flex-start}
-.mock-named-conn{display:block;flex:0 0 6px;width:1px;background:color-mix(in srgb,var(--dsw-alias-label-primary) 22%,transparent);pointer-events:none}
-.mock-named-cell[data-selected='1'] .mock-named-conn{background:var(--mock-pick)}
-.mock-named-cell .mock-named-label{width:max-content;max-width:calc(200% / var(--mock-count));min-height:0;padding:0;display:block;box-sizing:border-box;font-size:9px;line-height:11px;text-align:center}
-.mock-named-cell[data-selected='1'] .mock-named-label{border-radius:6px;color:var(--mock-pick);font-weight:600;box-shadow:inset 0 0 0 1px color-mix(in srgb,var(--mock-pick) 42%,transparent);background:color-mix(in srgb,var(--mock-pick) 18%,transparent)}
+   名字按内容自适应宽度（最多两格），对准自己的刻度；不画连接线（会挤窄文字、增加高度）。 */
+.mock-named-labels--band{display:block;position:relative;box-sizing:border-box;width:100%;height:34px}
+.mock-named-labels--band .mock-named-label{position:absolute;top:0;transform:translateX(-50%);width:max-content;max-width:calc(200% / var(--mock-count));min-height:34px;padding:0 4px;overflow-wrap:normal;word-break:keep-all;hyphens:none;box-sizing:border-box;display:flex;align-items:center;justify-content:center;font-size:9px;line-height:11px}
+.mock-named-labels--band .mock-named-label[data-selected='1']{border-radius:6px;color:var(--mock-pick);font-weight:600;box-shadow:inset 0 0 0 1px color-mix(in srgb,var(--mock-pick) 42%,transparent);background:color-mix(in srgb,var(--mock-pick) 18%,transparent)}
+.mock-named-content[data-narrow='1']{overflow-x:auto;overflow-y:hidden;scrollbar-width:thin}
+.mock-named-content[data-narrow='1'] .mock-named-labels--band{width:calc(var(--mock-count) * 52px)}
+.mock-named-content[data-narrow='1'] .mock-model-hit{width:calc(var(--mock-count) * 52px)}
 .mock-name-text{display:block;width:100%;min-width:0;text-align:center;word-break:keep-all;overflow-wrap:break-word}
 .mock-name-token{white-space:nowrap}
 .mock-named-labels[data-overflow='long'] .mock-named-label{overflow-wrap:anywhere}
@@ -960,18 +959,11 @@ render();
       label.setAttribute("data-selected", index === selected ? "1" : "0");
       label.title = name;
       if (twoBands) {
-        /* cell 负责对准刻度中心；内部是「连接线 + 名字」，名字按内容自适应宽度。 */
-        const cell = document.createElement("span");
-        cell.className = "mock-named-cell";
-        cell.setAttribute("data-index", String(index));
-        cell.setAttribute("data-band", index % 2 === 0 ? "top" : "bottom");
-        cell.setAttribute("data-selected", index === selected ? "1" : "0");
+        /* 名字绝对定位对准自己的刻度，宽度按内容自适应（不再画连接线）。 */
+        label.setAttribute("data-band", index % 2 === 0 ? "top" : "bottom");
         const pos = ((index + 0.5) / list.length) * 100;
         const halfCell = 100 / list.length;
-        cell.style.left = Math.max(halfCell, Math.min(100 - halfCell, pos)) + "%";
-        const conn = document.createElement("span");
-        conn.className = "mock-named-conn";
-        cell.appendChild(conn);
+        label.style.left = Math.max(halfCell, Math.min(100 - halfCell, pos)) + "%";
         /* 词内不断行：只在分隔符处换行，避免竖排单字。
            再包一层 block 文本容器，否则 flex 会把每个 token 当成独立项不折行。 */
         const textWrap = document.createElement("span");
@@ -989,8 +981,7 @@ render();
           }
         }
         label.appendChild(textWrap);
-        cell.appendChild(label);
-        (index % 2 === 0 ? modelLabels : modelLabelsBottom).appendChild(cell);
+        (index % 2 === 0 ? modelLabels : modelLabelsBottom).appendChild(label);
       } else {
         label.textContent = name;
         modelLabels.appendChild(label);
