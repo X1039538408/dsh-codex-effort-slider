@@ -1152,8 +1152,8 @@ function __clickLabel(node) { node.fire("onClick", {}); }
     }),
   });
   const menu = ctx.menu.menu;
-  // 原中心 300+100=400，加宽后 200+220(右栏)+160(名带) = 580 → 目标左 400-290 = 110
-  eq(menu.style.left, "110px", "[12c] 加宽后菜单钉在加宽前的中心");
+  // 原中心 300+100=400，加宽后 200+220(右栏)+280(名带) = 700 → 目标左 400-350 = 50
+  eq(menu.style.left, "50px", "[12c] 加宽后菜单钉在加宽前的中心");
   eq(menu.style.right, "auto", "[12c] 钉中心时清掉右侧锚定");
   ctx.react.unmount();
 }
@@ -1414,7 +1414,7 @@ section("12d. 模型名跨滑轨上下两层交错");
   ok(css.includes(".ces-name-token{white-space:nowrap}"), "[12d] 词内不断行（竖排单字的直接原因）");
   ok(css.includes("word-break:keep-all"), "[12d] 名字按词边界换行");
   ok(css.includes(".ces-named-labels--band"), "[12d] 交错 band 有独立样式");
-  ok(css.includes("calc(200% / var(--ces-count))"), "[12d] 交错模式每个名字占两格宽");
+  ok(css.includes("200% / var(--ces-count) - 10px"), "[12d] 交错模式每个名字占两格宽（减去间隙）");
   ok(css.includes("transform:translateX(-50%)"), "[12d] 交错模式名字以刻度中心为基准居中");
   ok(css.includes("18%,transparent") && css.includes("inset 0 0 0 1px"), "[12d] 选中档位高亮加强（底色 + 描边）");
   ok(css.includes("data-overflow='long'"), "[12d] 超长单词仍有兜底换行");
