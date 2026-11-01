@@ -146,16 +146,16 @@ function cssValue(node, prop) {
 section("1. 接线与产物");
 {
   const { registration, plugin, entry, document, host, internals } = await setup();
-  eq(registration.id, "dsh-codex-effort-slider", "[1] bundle 注册 id 正确");
+  eq(registration.id, "dsh-codex-effort-slider-plus", "[1] bundle 注册 id 正确（独立包名，避免被上游覆盖）");
   ok(Array.isArray(plugin.inject) && plugin.inject.indexOf("slots") >= 0, "[1] inject 含 slots");
   ok(plugin.inject.indexOf("modelDirectories") >= 0, "[1] inject 含 modelDirectories（读写官方档位靠它）");
   ok(plugin.inject.indexOf("sessions") >= 0, "[1] inject 含 sessions（判子代理会话靠它）");
   eq(entry.opts.name, "conversation.input.right", "[1] 仍然注册插槽条目（不可见锚点：拿 sessionId + ctx 的立足点）");
-  eq(entry.opts.id, "codex-effort-slider", "[1] 条目 id 是自己的");
-  const styles = document.querySelectorAll('style[data-plugin-css="dsh-codex-effort-slider"]');
+  eq(entry.opts.id, "codex-effort-slider", "[1] 插槽条目 id 保持稳定（与本包名解耦）");
+  const styles = document.querySelectorAll('style[data-plugin-css="dsh-codex-effort-slider-plus"]');
   eq(styles.length, 1, "[1] 样式挂载一次");
   internals.installStyles();
-  eq(document.querySelectorAll('style[data-plugin-css="dsh-codex-effort-slider"]').length, 1, "[1] 重复安装样式是幂等的");
+  eq(document.querySelectorAll('style[data-plugin-css="dsh-codex-effort-slider-plus"]').length, 1, "[1] 重复安装样式是幂等的");
   eq(host.subscriptions.length, 0, "[1] apply 期间没有订阅任何宿主事件");
   ok(internals.CSS.indexOf(".ces-track") > 0, "[1] 样式里有轨道规则");
 }

@@ -1,17 +1,17 @@
 {
-  "name": "dsh-codex-effort-slider",
-  "version": "1.9.0",
-  "description": "推理等级主滑轨 + 供应商/模型命名滑轨 / Reasoning effort slider with named provider and model rails for DeepSeek Harness",
+  "name": "dsh-codex-effort-slider-plus",
+  "version": "1.10.0",
+  "description": "推理等级主滑轨 + 供应商/模型命名滑轨（独立分支版）/ Reasoning effort slider with named provider and model rails for DeepSeek Harness",
   "license": "MIT",
-  "author": "Microqian2th",
+  "author": "X1039538408",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/Microqian2th/dsh-codex-effort-slider.git"
+    "url": "git+https://github.com/X1039538408/dsh-codex-effort-slider.git"
   },
   "bugs": {
-    "url": "https://github.com/Microqian2th/dsh-codex-effort-slider/issues"
+    "url": "https://github.com/X1039538408/dsh-codex-effort-slider/issues"
   },
-  "homepage": "https://github.com/Microqian2th/dsh-codex-effort-slider#readme",
+  "homepage": "https://github.com/X1039538408/dsh-codex-effort-slider#readme",
   "keywords": [
     "dsh",
     "dsh-plugin",
