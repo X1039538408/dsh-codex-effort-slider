@@ -121,8 +121,15 @@ const fns = [
   "readSettings",
   "normalizeSettings",
   "schemaDefaults",
+  // readSettings 的依赖链（缺一个就 ReferenceError → 页面里 motionMode() 抛错 → 拖不动）
+  "cacheGet",
+  "cacheSet",
+  "settingsKey",
+  "settingsEventName",
   "motionMode",
   "motionParamsForMode",
+  // 快速动画（Codex 手感）的"一档一格"判定：预览页也要按同一规则走
+  "detentTargetIndex",
 ].map((name) => extractFunction(source, name)).join("\n\n");
 const constantNames = [
   "ROW_PADDING_BLOCK",
@@ -135,6 +142,10 @@ const constantNames = [
   // 设置 schema 与版本号（normalizeSettings / readSettings 依赖）
   "SETTINGS_SCHEMA",
   "SETTINGS_VERSION",
+  // readSettings 用到的常量/可变缓存（缺了同样会 ReferenceError）
+  "SETTINGS_KEY",
+  "SETTINGS_EVENT",
+  "settingsCache",
   "MOTION",
   "MOTION_REDUCED",
   // 快速动画（Codex 手感）：不跟手 + 一档一格，需与插件同一套参数
@@ -475,14 +486,30 @@ function onMove(clientX) {
   }
   lastPtrPct = pct;
   lastPointerAt = now;
-  motion.target = pct;   // ← 只改目标
+  var count = LEVELS[current].length;
+  if (motionMode() === "fast") {
+    // 快速动画（Codex 手感）：不跟手 —— 目标永远是档位格，越过 1/3 档距才进一格（后退 2/3）。
+    var pos = pct * Math.max(1, count - 1);
+    if (!(detentIndex >= 0)) detentIndex = indexFromPct(motion.target, count);
+    detentIndex = detentTargetIndex(pos, detentIndex, count, DETENT_THIRD);
+    motion.target = pctFromIndex(detentIndex, count);
+  } else {
+    motion.target = pct;   // ← 只改目标
+  }
   startFrames();
 }
+
+var detentIndex = -1;
 
 track.addEventListener("pointerdown", function (event) {
   dragging = true;
   snapIndex = null;
   lastPtrPct = null;
+  detentIndex = -1;
+  if (motionMode() === "fast") {
+    var p0 = pctAt(event.clientX);
+    if (p0 !== null) detentIndex = indexFromPct(p0, LEVELS[current].length);
+  }
   track.setPointerCapture(event.pointerId);
   onMove(event.clientX);
 });
@@ -490,10 +517,19 @@ track.addEventListener("pointermove", function (event) { if (dragging) onMove(ev
 function end() {
   if (!dragging) return;
   dragging = false;
-  // 松手：按指针速度外推落点，目标改为档位点，**速度继承**
-  snapIndex = releaseIndexFor(motion.target, motion.vPtr, LEVELS[current].length);
-  motion.target = pctFromIndex(snapIndex, LEVELS[current].length);
-  motion.vPtr = 0;
+  var count = LEVELS[current].length;
+  if (motionMode() === "fast") {
+    // 快速动画：拖动中目标已经推到格子上，松手不再外推（与真实插件一致）
+    snapIndex = detentIndex >= 0 ? detentIndex : indexFromPct(motion.target, count);
+    snapIndex = Math.max(0, Math.min(count - 1, snapIndex));
+    motion.target = pctFromIndex(snapIndex, count);
+    motion.vPtr = 0;
+  } else {
+    // 松手：按指针速度外推落点，目标改为档位点，**速度继承**
+    snapIndex = releaseIndexFor(motion.target, motion.vPtr, count);
+    motion.target = pctFromIndex(snapIndex, count);
+    motion.vPtr = 0;
+  }
   startFrames();
 }
 track.addEventListener("pointerup", end);

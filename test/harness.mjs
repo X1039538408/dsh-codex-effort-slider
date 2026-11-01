@@ -21,16 +21,44 @@ import { readFileSync } from "node:fs";
  * 以及**多个属性串联**（`button[aria-haspopup="menu"][aria-expanded="true"]` ——
  * 插件的 DOM 桥正是用这条选择器找"打开的那颗官方席"）。
  */
+/** 假的 focus 跟踪（真实 DOM 里由浏览器维护 `document.activeElement`）。 */
+let __activeElement = null;
+/** focus 调用日志（按 className 记），用于断言"焦点回到了哪个控件"。 */
+let __focusLog = [];
+
 function matches(node, selector) {
   if (typeof selector !== "string" || selector.length === 0) return false;
-  const parsed = /^([a-zA-Z0-9-]*)((?:\s*\[[a-zA-Z0-9-]+="[^"]*"\])*)$/.exec(selector.trim());
-  if (!parsed) return false;
-  const [, tag, attrPart] = parsed;
+  // 支持 `tag`、`[attr]`、`[attr="value"]` 及其串联；**不写值**的属性选择器在真实 DOM 里合法，
+  // 这里也必须支持（插件靠 `[role="menu"]` 与 `[data-provider-id]` 两种形式定位官方节点）。
+  // 刻意不用正则：这个函数要能在任何转义环境下保持可读。
+  let rest = selector.trim();
+  let tag = rest;
+  const bracket = rest.indexOf("[");
+  if (bracket === 0) {
+    tag = "";
+  } else if (bracket > 0) {
+    tag = rest.slice(0, bracket);
+    rest = rest.slice(bracket);
+  } else {
+    rest = "";
+  }
   if (tag && node.tagName !== tag.toUpperCase()) return false;
-  const attrs = attrPart.match(/\[([a-zA-Z0-9-]+)="([^"]*)"\]/g) ?? [];
-  for (const attr of attrs) {
-    const [, name, value] = /\[([a-zA-Z0-9-]+)="([^"]*)"\]/.exec(attr);
-    if (node.getAttribute(name) !== value) return false;
+  let i = 0;
+  while (i < rest.length) {
+    if (rest[i] !== "[") return false;
+    const close = rest.indexOf("]", i);
+    if (close < 0) return false;
+    const inner = rest.slice(i + 1, close);
+    const eq = inner.indexOf("=");
+    if (eq < 0) {
+      if (!node.hasAttribute(inner)) return false;
+    } else {
+      const name = inner.slice(0, eq);
+      let value = inner.slice(eq + 1);
+      if (value.length >= 2 && value[0] === '"' && value[value.length - 1] === '"') value = value.slice(1, -1);
+      if (node.getAttribute(name) !== value) return false;
+    }
+    i = close + 1;
   }
   return true;
 }
@@ -46,6 +74,8 @@ class FakeNode {
     this.handlers = {};
     this.listeners = new Map();
     this.rect = { left: 0, top: 0, right: 200, bottom: 28, width: 200, height: 28 };
+    /** 滚动容器会用到（真实 DOM 里由浏览器维护）。 */
+    this.scrollTop = 0;
   }
 
   /** 插件在向上找 composer 时会判 nodeType === 1，所以文本节点要给 3。 */
@@ -68,6 +98,17 @@ class FakeNode {
     if (child.parentNode) child.parentNode.removeChild(child);
     child.parentNode = this;
     this.children.push(child);
+    return child;
+  }
+
+  /** 真实 DOM 的 `insertBefore(node, reference)`（插件的胶囊行就是插在官方列表前面）。 */
+  insertBefore(child, reference) {
+    if (!reference) return this.appendChild(child);
+    const index = this.children.indexOf(reference);
+    if (index < 0) return this.appendChild(child);
+    if (child.parentNode) child.parentNode.removeChild(child);
+    child.parentNode = this;
+    this.children.splice(index, 0, child);
     return child;
   }
 
@@ -119,7 +160,7 @@ class FakeNode {
   dispatch(type, event) {
     const set = this.listeners.get(type);
     if (!set) return;
-    for (const listener of [...set]) listener(Object.assign({ type, target: this, preventDefault() {} }, event));
+    for (const listener of [...set]) listener(Object.assign({ type, target: this, preventDefault() {}, stopPropagation() {} }, event));
   }
 
   contains(node) {
@@ -136,6 +177,11 @@ class FakeNode {
     return this.rect;
   }
 
+  click() {
+    this.clickCount = (this.clickCount ?? 0) + 1;
+    this.dispatch("click", { preventDefault() {}, stopPropagation() {} });
+  }
+
   setPointerCapture(pointerId) {
     this.capturedPointer = pointerId;
   }
@@ -144,7 +190,11 @@ class FakeNode {
     this.capturedPointer = null;
   }
 
-  focus() {}
+  focus() {
+    this.focusCount = (this.focusCount ?? 0) + 1;
+    __activeElement = this;
+    __focusLog.push(this.className ?? this.tagName);
+  }
 
   querySelectorAll(selector) {
     const out = [];
@@ -185,6 +235,9 @@ export function createDocument() {
     addEventListener: (type, listener) => documentElement.addEventListener(type, listener),
     removeEventListener: (type, listener) => documentElement.removeEventListener(type, listener),
     dispatch: (type, event) => documentElement.dispatch(type, event),
+    get activeElement() { return __activeElement; },
+    get focusLog() { return __focusLog; },
+    resetFocusLog: () => { __focusLog = []; },
   };
   return document;
 }
@@ -259,6 +312,79 @@ export function createOfficialMenu(document, options = {}) {
     modelValueEl: model.valueSpan,
     effortLabelEl: effort === null ? null : effort.labelSpan,
     effortValueEl: effort === null ? null : effort.valueSpan,
+    close() {
+      seat.setAttribute("aria-expanded", "false");
+      menu.remove();
+    },
+  };
+}
+
+/**
+ * 造一份"官方模型子面板"（`pane === "model"`）：席 + 菜单 + **嵌套的滚动列表**
+ * （`role="menu"`，类 `groups scrollable`）+ 每个提供商一个分组包装。
+ * 每个模型标签上带 `data-provider-id` / `data-model-id`，跟官方 `renderModelLabel` 一致
+ * —— 插件的提供商胶囊正是靠这个属性认分组的。
+ *
+ * @returns { composer, seat, menu, list, groupNodes, close() }
+ */
+export function createModelMenu(document, options = {}) {
+  const composer = new FakeNode("div");
+  composer.setAttribute("data-composer-card", "");
+  document.body.appendChild(composer);
+
+  const seat = new FakeNode("button");
+  seat.setAttribute("aria-haspopup", "menu");
+  seat.setAttribute("aria-expanded", "true");
+  seat.setAttribute("aria-controls", "model-menu");
+  composer.appendChild(seat);
+
+  const menu = new FakeNode("div");
+  menu.setAttribute("role", "menu");
+  menu.setAttribute("id", "model-menu");
+  document.body.appendChild(menu);
+
+  const list = new FakeNode("div");
+  list.setAttribute("role", "menu");
+  list.setAttribute("id", "model-menu-models");
+  list.setAttribute("class", "groups scrollable");
+  list.className = "groups scrollable";
+  list.rect = { left: 0, top: 0, right: 280, bottom: 320, width: 280, height: 320 };
+  menu.appendChild(list);
+
+  const groups = options.groups ?? [
+    { id: "openai", name: "OpenAI", models: [{ id: "gpt-5", name: "GPT-5" }, { id: "o3-mini", name: "o3-mini" }] },
+    { id: "anthropic", name: "Anthropic", models: [{ id: "claude-sonnet-4", name: "Claude Sonnet 4" }] },
+  ];
+
+  const groupNodes = [];
+  let top = 0;
+  for (const group of groups) {
+    const wrap = new FakeNode("div");
+    const heading = new FakeNode("div");
+    heading.textContent = group.name;
+    wrap.appendChild(heading);
+    for (const model of group.models) {
+      const button = new FakeNode("button");
+      button.setAttribute("role", "menuitemradio");
+      const label = new FakeNode("span");
+      label.setAttribute("data-provider-id", group.id);
+      label.setAttribute("data-model-id", model.id);
+      label.textContent = model.name;
+      button.appendChild(label);
+      wrap.appendChild(button);
+    }
+    wrap.rect = { left: 0, top, right: 280, bottom: top + 40, width: 280, height: 40 };
+    top += 200; // 分组在"视口"里错开，滚动增量才可断言
+    list.appendChild(wrap);
+    groupNodes.push(wrap);
+  }
+
+  return {
+    composer,
+    seat,
+    menu,
+    list,
+    groupNodes,
     close() {
       seat.setAttribute("aria-expanded", "false");
       menu.remove();
@@ -359,6 +485,9 @@ export function createReactStub() {
       }
       return undefined;
     },
+    useLayoutEffect(effect, deps) {
+      return react.useEffect(effect, deps);
+    },
     useSyncExternalStore(subscribe, getSnapshot) {
       const slot = slotAt(cursor++, "uses");
       if (!slot.ready || slot.subscribe !== subscribe) {
@@ -446,16 +575,24 @@ export function createReactStub() {
     pendingEffects = [];
     // 桩件不做 diff：每次重渲前把上一次的产物摘掉、portal 容器清空，
     // 否则重复渲染会叠加出多份 DOM，测试就会查到上一次的陈旧节点。
-    if (currentRoot !== null && currentRoot.node && currentRoot.node.parentNode) {
-      currentRoot.node.parentNode.removeChild(currentRoot.node);
+    // ⚠️ 一次渲染可能产出**多个**顶层节点（Fragment），所以按"本次新增了哪些"整批摘掉，
+    //    只摘单个节点会在重渲时把按钮/anchor 叠成好几份。
+    if (currentRoot !== null) {
+      const previous = currentRoot.nodes ?? (currentRoot.node ? [currentRoot.node] : []);
+      for (const node of previous) {
+        if (node && node.parentNode) node.parentNode.removeChild(node);
+      }
     }
     for (const container of portalHosts) container.children.length = 0;
     portalHosts.length = 0;
     const parent = currentRoot.parent ?? null;
     const host = parent ?? new FakeNode("div");
+    const childCountBefore = host.children.length;
     renderElement(react.createElement(currentRoot.type, currentRoot.props), host);
+    const added = host.children.slice(childCountBefore);
     currentRoot.host = host;
-    currentRoot.node = parent !== null ? (host.children[host.children.length - 1] ?? null) : (host.children[0] ?? null);
+    currentRoot.nodes = added;
+    currentRoot.node = added.length > 0 ? added[added.length - 1] : null;
     rendering = false;
     renderCount += 1;
 
@@ -607,7 +744,7 @@ export function snapshotFor(model = DEFAULT_MODEL, reasoningEffort = undefined) 
  */
 export function createFakeHost(options = {}) {
   const model = options.model ?? DEFAULT_MODEL;
-  const store = createStore(snapshotFor(model, options.effort));
+  const store = createStore(options.snapshot ?? snapshotFor(model, options.effort));
   const selects = [];
   const loads = [];
   let directoryForCalls = 0;
@@ -624,12 +761,11 @@ export function createFakeHost(options = {}) {
       const behavior = options.select;
       if (typeof behavior === "function") return behavior(selection, store);
       // 默认：模拟宿主往返 —— 成功并把 durable projection 写回共享快照。
+      const current = { ...store.getSnapshot().current, ...selection };
+      if (!Object.prototype.hasOwnProperty.call(selection, "reasoningEffort")) delete current.reasoningEffort;
       store.set({
         ...store.getSnapshot(),
-        current: {
-          ...store.getSnapshot().current,
-          reasoningEffort: selection.reasoningEffort,
-        },
+        current,
       });
       return { ok: true, value: undefined };
     },
@@ -767,8 +903,18 @@ export function loadBundle(bundlePath, document, options = {}) {
   // 只给这个 bundle 传它真正依赖的宿主全局；其余走真实全局（Promise/Set/Math/Date…）。
   // performance 单独传**假时钟**：引擎的"指针速度/松手外推"都读它，必须可控。
   const performanceStub = { now: () => clockNow() };
-  const run = new Function("window", "document", "console", "setTimeout", "clearTimeout", "performance", code);
-  run(window, document, console, setTimeout, clearTimeout, performanceStub);
+  // 内存版 localStorage：插件用它记住"每家上次用过的模型"（以及动画设置）。
+  // 每次 loadBundle 一套，测试之间不串味。
+  const storage = new Map();
+  const localStorageStub = {
+    getItem: (key) => (storage.has(String(key)) ? storage.get(String(key)) : null),
+    setItem: (key, value) => { storage.set(String(key), String(value)); },
+    removeItem: (key) => { storage.delete(String(key)); },
+    clear: () => { storage.clear(); },
+    get length() { return storage.size; },
+  };
+  const run = new Function("window", "document", "console", "setTimeout", "clearTimeout", "performance", "localStorage", code);
+  run(window, document, console, setTimeout, clearTimeout, performanceStub, localStorageStub);
   if (registration === null) throw new Error("bundle 没有调用 window.__ModuleLoader__.load()");
   const react = createReactStub();
   const plugin = registration.factory((spec) => {
@@ -783,6 +929,7 @@ export function loadBundle(bundlePath, document, options = {}) {
   };
   return {
     registration, plugin, react, window, document, observers, flushObservers,
+    localStorage: localStorageStub,
     flushFrames, advanceClock, clockNow,
   };
 }

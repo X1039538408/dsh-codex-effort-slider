@@ -2,6 +2,7 @@
 <html lang="zh-CN">
 <head>
 <meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
 <title>dsh-codex-effort-slider — 观感预览（官方菜单那一行）</title>
 <style>
 /* ── 预览页自带的最小主题令牌（取自 DSH 官方 ui-theme 的真实取值）──
@@ -9,12 +10,15 @@
 body{--dsw-alias-bg-layer-1:#fff;--dsw-alias-bg-layer-2:#f5f5f5;--dsw-alias-bg-layer-3:#fff;--dsw-menu-surface-fill:#f8f9fa94;--dsw-alias-border-l1:rgb(15 17 21 / 8%);--dsw-alias-border-l2:#0000001a;--dsw-alias-label-primary:#0f1115;--dsw-alias-label-secondary:#65676b;--dsw-alias-label-tertiary:#81858c;--dsw-alias-label-caption:#a2a4a6;--dsw-alias-interactive-bg-hover:#2631480f;--dsw-alias-state-business-primary:#4d93f8;--dsw-alias-state-error-primary:#e5484d;--dsw-alias-menu-icon:#979da6;--dsw-radius-md:12px;--dsw-radius-lg:16px;--dsw-menu-backdrop-filter:blur(20px);--dsw-elevation-prominent:0 12px 32px rgb(0 0 0 / 18%);--dsw-focus-ring-width:2px;--dsw-focus-ring-color:#4d93f8;color-scheme:light}
 body[data-ds-dark-theme]{--dsw-alias-bg-layer-1:#212123;--dsw-alias-bg-layer-2:#17171a;--dsw-alias-bg-layer-3:#292929;--dsw-menu-surface-fill:#43454a73;--dsw-alias-border-l1:rgb(255 255 255 / 6%);--dsw-alias-border-l2:#ffffff1f;--dsw-alias-label-primary:#ebeef2;--dsw-alias-label-secondary:#cfd3d6;--dsw-alias-label-tertiary:#adb2b8;--dsw-alias-label-caption:#979da6;--dsw-alias-interactive-bg-hover:#ffffff14;--dsw-alias-state-business-primary:#7aaaff;--dsw-alias-state-error-primary:#ff6b6b;--dsw-elevation-prominent:0 12px 32px rgb(0 0 0 / 45%);color-scheme:dark}
 *{box-sizing:border-box}
-body{margin:0;min-height:100vh;display:grid;place-items:center;gap:18px;padding:32px;font-family:system-ui,-apple-system,"Segoe UI",Roboto,"PingFang SC","Microsoft YaHei",sans-serif;background:var(--dsw-alias-bg-layer-2);color:var(--dsw-alias-label-primary)}
-.stage{width:560px;max-width:100%}
+body{--mock-pick:var(--dsw-alias-state-business-primary,#4d93f8)}
+body{margin:0;min-height:100vh;display:grid;grid-template-columns:minmax(0,1fr);place-items:center;gap:18px;padding:16px;font-family:system-ui,-apple-system,"Segoe UI",Roboto,"PingFang SC","Microsoft YaHei",sans-serif;background:var(--dsw-alias-bg-layer-2);color:var(--dsw-alias-label-primary)}
+.stage{width:min(1060px,calc(100vw - 32px));max-width:100%;min-width:0}
 .note{font-size:12px;line-height:1.7;color:var(--dsw-alias-label-tertiary);margin-bottom:14px}
 .note b{color:var(--dsw-alias-label-secondary)}
 /* 复刻官方模型菜单外壳（.menu / .cell 的真实取值：flex 行、34px 高、padding 0 8px、gap 6px） */
-.mock-menu{z-index:1100;width:max-content;min-width:280px;max-width:420px;border-radius:var(--dsw-radius-lg);background:var(--dsw-menu-surface-fill);backdrop-filter:var(--dsw-menu-backdrop-filter);box-shadow:var(--dsw-elevation-prominent);border:1px solid var(--dsw-alias-border-l2);display:flex;flex-direction:column;padding:4px}
+.mock-menu{z-index:1100;width:100%;min-width:0;max-width:1060px;border-radius:var(--dsw-radius-lg);background:var(--dsw-menu-surface-fill);backdrop-filter:var(--dsw-menu-backdrop-filter);box-shadow:var(--dsw-elevation-prominent);border:1px solid var(--dsw-alias-border-l2);display:flex;flex-direction:row;align-items:stretch;padding:4px}
+.mock-menu-left{flex:1;min-width:0;display:flex;flex-direction:column}
+.mock-provider-column{box-sizing:border-box;flex:none;width:220px;min-width:0;padding:8px 10px;border-left:1px solid var(--dsw-alias-border-l1);display:flex;flex-direction:column;gap:4px}
 .mock-cell{box-sizing:border-box;border-radius:var(--dsw-radius-md);width:auto;min-width:100%;height:34px;color:var(--dsw-alias-label-primary);cursor:pointer;text-align:left;background:0 0;border:none;outline:none;align-items:center;gap:6px;padding:0 8px;font-size:13px;line-height:20px;display:flex;font-family:inherit}
 .mock-cell:hover{background:var(--dsw-alias-interactive-bg-hover)}
 .mock-cellLabel{white-space:nowrap;flex:none}
@@ -61,27 +65,87 @@ body[data-ds-dark-theme] .ces-star__dot{background:#f5f3ff;box-shadow:0 0 5px rg
 body[data-ds-dark-theme] .ces-set{background:var(--dsw-alias-bg-base,#24262c);color:var(--dsw-alias-label-pri,#e8e9ec)}
 .ces-inline[data-reached-ticks='dim'] .ces-tick[data-on='1']{background:rgba(128,128,128,.30);background:color-mix(in srgb,var(--dsw-alias-label-primary,#0f1115) 26%,transparent)}
 .ces-inline[data-reached-ticks='hidden'] .ces-tick[data-on='1']{display:none}
+/* ── 提供商右栏：状态文字（预览/错误时显示）── */
+.mock-provider-status{display:none;margin:0 0 1px;font-size:10px;line-height:12px;color:var(--dsw-alias-label-tertiary);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.mock-provider-status[data-visible='1']{display:block}
+.mock-provider-status[data-preview='1']{color:var(--dsw-alias-label-secondary)}
+@keyframes mock-spark{0%{opacity:0;transform:translate3d(0,0,0) scale(.6)}30%{opacity:1}100%{opacity:0;transform:translate3d(var(--dx,0),var(--dy,-10px),0) scale(1)}}
+/* 三层菜单中的紧凑命名轨：按选项数等分宽度，名称完整换行 */
+.mock-named-viewport{width:100%;min-width:0;overflow:visible}
+.mock-named-content{box-sizing:border-box;width:100%;container-type:inline-size;container-name:mock-rail}
+.mock-named-labels{display:grid;grid-template-columns:repeat(var(--mock-count),minmax(0,1fr));align-items:stretch;width:100%}
+.mock-named-label{box-sizing:border-box;width:100%;min-width:0;max-width:100%;min-height:18px;padding:0 2px 1px;display:flex;align-items:center;justify-content:center;text-align:center;white-space:normal;word-break:normal;overflow-wrap:break-word;hyphens:manual;font-size:10px;line-height:11px;color:var(--dsw-alias-label-secondary);cursor:pointer;border-radius:4px;transition:background-color .12s ease,color .12s ease}
+.mock-named-labels[data-density='compact'] .mock-named-label,.mock-named-labels[data-density='dense'] .mock-named-label{overflow-wrap:anywhere}
+.mock-named-labels[data-density='compact'] .mock-named-label{font-size:10px;line-height:10px}
+.mock-named-labels[data-density='dense'] .mock-named-label{font-size:9px;line-height:9px}
+@container mock-rail (max-width:600px){.mock-named-labels[data-density='compact'] .mock-named-label{font-size:9px;line-height:10px}.mock-named-labels[data-density='dense'] .mock-named-label{font-size:8px;line-height:9px}}
+@container mock-rail (max-width:400px){.mock-named-labels[data-density='compact'] .mock-named-label{font-size:8px;line-height:9px}.mock-named-labels[data-density='dense'] .mock-named-label{font-size:8px;line-height:9px}}
+.mock-named-label[data-selected='1']{width:calc(100% - 4px);justify-self:center;border-radius:6px;color:var(--mock-pick);font-weight:600;background:color-mix(in srgb,var(--mock-pick) 11%,transparent)}
+.mock-named-label:hover{background:color-mix(in srgb,var(--mock-pick) 7%,transparent)}
+.mock-model-hit{position:relative;display:block;height:20px;touch-action:none;user-select:none;border-radius:6px}
+.mock-model-block{padding:1px 8px 3px}
+.mock-model-hit[aria-disabled='true']{opacity:.55;cursor:default}
+.mock-model-hit:focus-visible{outline:var(--dsw-focus-ring-width,2px) solid var(--dsw-focus-ring-color);outline-offset:1px}
+.mock-model-rail{position:relative;top:3px;box-sizing:border-box;width:100%;height:14px;border-radius:999px;background:var(--dsw-alias-border-l1)}
+.mock-model-fill{position:absolute;top:0;bottom:0;left:0;border-radius:999px;background:color-mix(in srgb,var(--mock-pick) 22%,transparent);pointer-events:none}
+.mock-model-tick{position:absolute;top:50%;width:2px;height:6px;margin:-3px 0 0 -1px;border-radius:1px;background:color-mix(in srgb,var(--dsw-alias-label-primary) 26%,transparent);pointer-events:none}
+.mock-model-tick[data-on='1']{width:3px;height:8px;margin:-4px 0 0 -1.5px;background:var(--mock-pick)}
+.mock-model-knob{position:absolute;top:50%;width:12px;height:12px;margin:-6px 0 0 -6px;border-radius:50%;background:#fff;box-shadow:0 1px 2px rgba(0,0,0,.18),0 0 0 1px var(--mock-pick);pointer-events:none}
+.mock-provider-spark{position:absolute;left:50%;top:0;width:2px;height:2px;margin:0 0 0 -1px;border-radius:50%;background:#fff;box-shadow:0 0 4px rgba(168,85,247,.8);pointer-events:none;animation:mock-spark 320ms ease-out forwards}
+.mock-provider-heading{margin:0;font-size:11px;line-height:14px;color:var(--dsw-alias-label-secondary)}
+.mock-provider-body{position:relative;display:grid;grid-template-columns:22px minmax(0,1fr);grid-template-rows:minmax(0,1fr);align-items:stretch;gap:6px;flex:1;min-height:0;padding-block:2px}
+.mock-provider-hit{position:relative;min-height:0;touch-action:none;user-select:none;cursor:ns-resize;border-radius:6px}
+.mock-provider-rail{position:absolute;top:0;bottom:0;left:50%;width:10px;transform:translateX(-50%);border-radius:999px;background:var(--dsw-alias-border-l1)}
+.mock-provider-fill{position:absolute;top:0;left:0;right:0;border-radius:999px;background:color-mix(in srgb,var(--mock-pick) 24%,transparent);pointer-events:none}
+.mock-provider-tick{position:absolute;left:50%;width:6px;height:2px;margin:-1px 0 0 -3px;border-radius:1px;background:color-mix(in srgb,var(--dsw-alias-label-primary) 26%,transparent);pointer-events:none}
+.mock-provider-tick[data-on='1']{width:10px;height:3px;margin:-1.5px 0 0 -5px;background:var(--mock-pick)}
+.mock-provider-knob{position:absolute;left:50%;width:12px;height:12px;margin:-6px 0 0 -6px;border-radius:50%;background:#fff;box-shadow:0 1px 2px rgba(0,0,0,.18),0 0 0 1px var(--mock-pick);pointer-events:none}
+.mock-provider-list{display:grid;grid-template-rows:repeat(var(--mock-count),minmax(0,1fr));min-height:0}
+.mock-provider-list .mock-named-label{justify-content:flex-start;text-align:left;padding:1px 3px;font-size:10px;line-height:12px;overflow-wrap:anywhere;min-width:0;max-width:100%}
+.mock-provider-list[data-density='compact'] .mock-named-label{font-size:9px;line-height:11px}
+.mock-provider-list[data-density='dense'] .mock-named-label{font-size:8px;line-height:10px}
+@media(max-width:420px){body{padding:16px}.mock-menu{width:100%;min-width:0;max-width:420px}.mock-composer{width:100%}.controls{flex-wrap:wrap;justify-content:center}}
 </style>
 </head>
 <body>
 <div class="stage">
   <div class="note">
-    这是 <b>观感预览</b>（静态复刻）：CSS 与拖动数学都是从 <code>lib/client.js</code> 抽取的真代码，
-    注入手法也与插件一致（同样 4 个内联样式 + append 一个容器）。<b>拖到最右</b>看最高档能量层。
-    注意输入框那一行<b>不再有任何东西</b>——控制项只在官方菜单的「推理等级」那一行里。
+    这是 <b>观感预览</b>（静态复刻）：推理强度视觉与拖动数学取自 <code>lib/client.js</code>，
+    上方供应商/模型刻度按选项数等分，名称先自然换行；选项多时字号略小，所有项仍一屏可见。
+    拖动时显示目标状态，空闲隐藏；下方推理等级主轨与设置控件保持原样。
   </div>
 
   <div class="mock-menu" role="menu" aria-label="模型与推理等级">
-    <button class="mock-cell" role="menuitem" type="button" id="modelRow">
-      <span class="mock-cellLabel">模型</span>
-      <span class="mock-cellValue">DeepSeek-V41-Flash</span>
-      <svg class="mock-chev" viewBox="0 0 17 17" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M6.5 4 11 8.5 6.5 13"></path></svg>
-    </button>
-    <button class="mock-cell" role="menuitem" type="button" id="effortRow">
-      <span class="mock-cellLabel">推理等级</span>
-      <span class="mock-cellValue" id="effortValue">High</span>
-      <svg class="mock-chev" viewBox="0 0 17 17" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M6.5 4 11 8.5 6.5 13"></path></svg>
-    </button>
+    <div class="mock-menu-left">
+      <button class="mock-cell" role="menuitem" type="button" id="modelRow">
+        <span class="mock-cellLabel">模型</span>
+        <span class="mock-cellValue">Kimi K3.1 Pro</span>
+        <svg class="mock-chev" viewBox="0 0 17 17" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M6.5 4 11 8.5 6.5 13"></path></svg>
+      </button>
+      <div class="mock-model-block" id="modelSlot">
+        <div class="mock-named-viewport"><div class="mock-named-content" id="modelContent">
+          <div class="mock-named-labels" id="modelLabels"></div>
+          <div class="mock-model-hit" id="modelHit" role="slider" tabindex="0" aria-label="模型" aria-valuemin="0" aria-valuemax="5" aria-valuenow="0" aria-valuetext="Kimi K3.1 Pro">
+            <div class="mock-model-rail" id="modelRail"><div class="mock-model-fill" id="modelFill"></div><div class="mock-model-knob" id="modelKnob"></div></div>
+          </div>
+        </div></div>
+      </div>
+      <button class="mock-cell" role="menuitem" type="button" id="effortRow">
+        <span class="mock-cellLabel">推理等级</span>
+        <span class="mock-cellValue" id="effortValue">High</span>
+        <svg class="mock-chev" viewBox="0 0 17 17" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M6.5 4 11 8.5 6.5 13"></path></svg>
+      </button>
+    </div>
+    <div class="mock-provider-column" id="providerColumn">
+      <span class="mock-provider-status" id="providerStatus" data-preview="0" data-visible="0">Kimi subscription · Kimi K3.1 Pro</span>
+      <div class="mock-provider-heading">供应商</div>
+      <div class="mock-provider-body">
+        <div class="mock-provider-hit" id="providerHit" role="slider" tabindex="0" aria-label="供应商" aria-orientation="vertical" aria-valuemin="0" aria-valuemax="8" aria-valuenow="8" aria-valuetext="Kimi subscription">
+          <div class="mock-provider-rail" id="providerRail"><div class="mock-provider-fill" id="providerFill"></div><div class="mock-provider-knob" id="providerKnob"></div></div>
+        </div>
+        <div class="mock-provider-list" id="providerLabels"></div>
+      </div>
+    </div>
   </div>
 
   <div class="mock-composer">
@@ -98,6 +162,7 @@ body[data-ds-dark-theme] .ces-set{background:var(--dsw-alias-bg-base,#24262c);co
     <button id="levels4">4 档（Off/Low/High/Max）</button>
     <button id="levels2">2 档（High/Max）</button>
     <button id="levels6">6 档（含 minimal/xhigh）</button>
+    <button id="providerFail">下一次切换模拟失败</button>
   </div>
 </div>
 
@@ -728,6 +793,277 @@ document.getElementById("levels2").addEventListener("click", function () { setLe
 document.getElementById("levels6").addEventListener("click", function () { setLevels("6"); });
 
 render();
+
+(function () {
+  const PROVIDERS = [
+    { name: "DeepSeek Account", models: ["DeepSeek V4.1 Flash", "DeepSeek V4 Pro"] },
+    { name: "DeepSeek", models: ["DeepSeek V4.1 Flash", "DeepSeek V4 Pro", "DeepSeek R1"] },
+    { name: "minimax-cn", models: ["MiniMax M2.7", "MiniMax M2.7 highspeed", "MiniMax M3"] },
+    { name: "Pixel Codex", models: ["GPT-6.1 Sol", "GPT-6 Astra", "GPT-6 Luna"] },
+    { name: "WOYAO · Claude", models: ["Claude Sonnet 4", "Claude Opus 4"] },
+    { name: "WOYAO · GPT", models: ["GPT-6.1 Sol", "GPT-6 Astra"] },
+    { name: "WOYAO · 通用", models: ["Gemini 3.8 Flash High", "Gemini 4 Argon", "Grok 4.7", "GLM 5.3", "DeepSeek V4.1 Flash (1017)", "GPT-5.6 Sol", "GPT-5.6 Terra", "GPT-5.6 Luna", "GPT-Reserve (Experimental)"] },
+    { name: "ChatGPT subscription", models: ["ChatGPT Subscription"] },
+    { name: "Kimi subscription", models: ["Kimi K3.1 Pro", "Kimi K3.1 Pro Highspeed", "Kimi K3", "Kimi K3-256K", "Kimi K2.8 Preview", "Kimi K2.7 Code Highspeed"] },
+  ];
+  const providerStatus = document.getElementById("providerStatus");
+  const providerLabels = document.getElementById("providerLabels");
+  const providerHit = document.getElementById("providerHit");
+  const providerRail = document.getElementById("providerRail");
+  const providerFill = document.getElementById("providerFill");
+  const providerKnob = document.getElementById("providerKnob");
+  const modelContent = document.getElementById("modelContent");
+  const modelLabels = document.getElementById("modelLabels");
+  const modelHit = document.getElementById("modelHit");
+  const modelRail = document.getElementById("modelRail");
+  const modelFill = document.getElementById("modelFill");
+  const modelKnob = document.getElementById("modelKnob");
+  const modelRowValue = document.querySelector("#modelRow .mock-cellValue");
+  const seatLabel = document.querySelector("#seat .mock-triggerLabel");
+  let providerIndex = 8;
+  const modelIndexes = Array(PROVIDERS.length).fill(0);
+  let providerPreview = null;
+  let providerBusy = false;
+  let providerDragging = false;
+  let providerTarget = providerIndex;
+  let modelPreview = null;
+  let modelDragging = false;
+  let modelTarget = 0;
+  let failNext = false;
+
+  function providerName(index) { return PROVIDERS[index].name; }
+  function modelList(index) { return PROVIDERS[index].models; }
+  function selectedModel(index) { return modelList(index)[modelIndexes[index]]; }
+  function stopLeft(index, count) { return ((index + 0.5) / Math.max(1, count) * 100) + "%"; }
+  function stopTop(index, count) { return ((index + 0.5) / Math.max(1, count) * 100) + "%"; }
+  function indexAt(clientX, rail, count) {
+    const rect = rail.getBoundingClientRect();
+    const width = Math.max(1, rect.width);
+    const position = Math.max(0, Math.min(1, (clientX - rect.left) / width));
+    return Math.max(0, Math.min(count - 1, Math.round(position * count - 0.5)));
+  }
+  function indexAtY(clientY, rail, count) {
+    const rect = rail.getBoundingClientRect();
+    const height = Math.max(1, rect.height);
+    const position = Math.max(0, Math.min(1, (clientY - rect.top) / height));
+    return Math.max(0, Math.min(count - 1, Math.round(position * count - 0.5)));
+  }
+  function addProviderTicks(count, activeIndex) {
+    providerRail.querySelectorAll(".mock-provider-tick").forEach((tick) => tick.remove());
+    for (let i = 0; i < count; i += 1) {
+      const tick = document.createElement("span");
+      tick.className = "mock-provider-tick";
+      tick.setAttribute("data-on", i === activeIndex ? "1" : "0");
+      tick.style.top = stopTop(i, count);
+      providerRail.appendChild(tick);
+    }
+  }
+  function updateCurrentText() {
+    const text = providerName(providerIndex) + " · " + selectedModel(providerIndex);
+    providerStatus.textContent = text;
+    providerStatus.setAttribute("data-preview", "0");
+    providerStatus.setAttribute("data-visible", "0");
+    if (modelRowValue) modelRowValue.textContent = selectedModel(providerIndex);
+    if (seatLabel) seatLabel.textContent = selectedModel(providerIndex);
+  }
+  function addTicks(rail, count, activeIndex, tickClass) {
+    rail.querySelectorAll("." + tickClass).forEach((tick) => tick.remove());
+    for (let i = 0; i < count; i += 1) {
+      const tick = document.createElement("span");
+      tick.className = tickClass;
+      tick.setAttribute("data-on", i === activeIndex ? "1" : "0");
+      tick.style.left = stopLeft(i, count);
+      rail.appendChild(tick);
+    }
+  }
+  function renderProvider(previewIndex = null) {
+    const selected = previewIndex === null ? providerIndex : previewIndex;
+    const count = PROVIDERS.length;
+    providerLabels.style.setProperty("--mock-count", String(count));
+    providerLabels.removeAttribute("data-density");
+    if (count >= 13) providerLabels.setAttribute("data-density", "dense");
+    else if (count >= 10) providerLabels.setAttribute("data-density", "compact");
+    providerLabels.replaceChildren();
+    PROVIDERS.forEach((provider, index) => {
+      const label = document.createElement("span");
+      label.className = "mock-named-label";
+      label.setAttribute("data-selected", index === selected ? "1" : "0");
+      label.title = provider.name;
+      label.textContent = provider.name;
+      label.addEventListener("click", (event) => { event.preventDefault(); event.stopPropagation(); commitProvider(index); });
+      providerLabels.appendChild(label);
+    });
+    providerFill.style.height = stopTop(selected, count);
+    providerKnob.style.top = stopTop(selected, count);
+    providerHit.setAttribute("aria-valuemax", String(count - 1));
+    providerHit.setAttribute("aria-valuenow", String(selected));
+    providerHit.setAttribute("aria-valuetext", PROVIDERS[selected].name);
+    addProviderTicks(count, selected);
+    if (previewIndex !== null) {
+      providerStatus.textContent = "预览：" + PROVIDERS[previewIndex].name + " · " + modelList(previewIndex)[modelIndexes[previewIndex]];
+      providerStatus.setAttribute("data-preview", "1");
+      providerStatus.setAttribute("data-visible", "1");
+    } else if (!providerBusy) updateCurrentText();
+  }
+  function renderModel(previewIndex = null) {
+    const list = modelList(providerIndex);
+    const selected = previewIndex === null ? modelIndexes[providerIndex] : previewIndex;
+    modelContent.style.width = "100%";
+    modelLabels.style.setProperty("--mock-count", String(Math.max(1, list.length)));
+    modelLabels.removeAttribute("data-density");
+    if (list.length >= 10) modelLabels.setAttribute("data-density", "dense");
+    else if (list.length >= 7) modelLabels.setAttribute("data-density", "compact");
+    modelLabels.replaceChildren();
+    list.forEach((name, index) => {
+      const label = document.createElement("span");
+      label.className = "mock-named-label";
+      label.setAttribute("data-selected", index === selected ? "1" : "0");
+      label.title = name;
+      label.textContent = name;
+      label.addEventListener("click", (event) => { event.preventDefault(); event.stopPropagation(); commitModel(index); });
+      modelLabels.appendChild(label);
+    });
+    modelHit.style.width = "100%";
+    modelRail.style.width = "100%";
+    modelFill.style.width = stopLeft(selected, list.length);
+    modelKnob.style.left = stopLeft(selected, list.length);
+    modelHit.setAttribute("aria-valuemax", String(Math.max(0, list.length - 1)));
+    modelHit.setAttribute("aria-valuenow", String(selected));
+    modelHit.setAttribute("aria-valuetext", list[selected] || "");
+    modelHit.setAttribute("aria-disabled", providerPreview !== null || providerBusy || list.length < 2 ? "true" : "false");
+    addTicks(modelRail, list.length, selected, "mock-model-tick");
+    if (previewIndex !== null) {
+      providerStatus.textContent = "预览模型：" + list[selected];
+      providerStatus.setAttribute("data-preview", "1");
+      providerStatus.setAttribute("data-visible", "1");
+    }
+  }
+  function flash(index) {
+    const offsets = [[-7, -11], [6, -13], [10, -8], [-3, -15]];
+    offsets.forEach((pair, i) => {
+      const spark = document.createElement("span");
+      spark.className = "mock-provider-spark";
+      spark.style.top = stopTop(index, PROVIDERS.length);
+      spark.style.left = "50%";
+      spark.style.setProperty("--dx", pair[0] + "px");
+      spark.style.setProperty("--dy", pair[1] + "px");
+      spark.style.animationDelay = i * 35 + "ms";
+      providerRail.appendChild(spark);
+      setTimeout(() => spark.remove(), 380);
+    });
+  }
+  function commitProvider(index) {
+    if (providerBusy || index < 0 || index >= PROVIDERS.length) return;
+    providerPreview = null;
+    if (index === providerIndex) { renderProvider(); renderModel(); return; }
+    providerBusy = true;
+    providerTarget = index;
+    providerStatus.textContent = "切换中… " + providerName(index);
+    providerStatus.setAttribute("data-visible", "1");
+    providerStatus.setAttribute("data-preview", "1");
+    renderModel();
+    setTimeout(() => {
+      if (failNext) {
+        failNext = false;
+        providerBusy = false;
+        renderProvider();
+        renderModel();
+        providerStatus.style.color = "var(--dsw-alias-state-error-primary)";
+        providerStatus.textContent = "切换失败，已回到 " + providerName(providerIndex);
+        providerStatus.setAttribute("data-visible", "1");
+        providerStatus.setAttribute("data-preview", "0");
+        setTimeout(() => { providerStatus.style.color = ""; updateCurrentText(); }, 1400);
+        return;
+      }
+      providerIndex = providerTarget;
+      providerBusy = false;
+      providerPreview = null;
+      renderProvider();
+      renderModel();
+      updateCurrentText();
+      flash(providerIndex);
+    }, 220);
+  }
+  function commitModel(index) {
+    if (providerBusy || providerPreview !== null) return;
+    const list = modelList(providerIndex);
+    if (index < 0 || index >= list.length) return;
+    modelPreview = null;
+    modelIndexes[providerIndex] = index;
+    renderModel();
+    updateCurrentText();
+  }
+  function previewProvider(index) {
+    providerPreview = index;
+    providerTarget = index;
+    renderProvider(index);
+    renderModel();
+  }
+  function previewModel(index) { modelPreview = index; modelTarget = index; renderModel(index); }
+
+  providerHit.addEventListener("pointerdown", (event) => {
+    if (providerBusy) return;
+    event.preventDefault(); event.stopPropagation();
+    providerDragging = true;
+    providerHit.setPointerCapture(event.pointerId);
+    previewProvider(indexAtY(event.clientY, providerRail, PROVIDERS.length));
+  });
+  providerHit.addEventListener("pointermove", (event) => {
+    if (!providerDragging) return;
+    previewProvider(indexAtY(event.clientY, providerRail, PROVIDERS.length));
+  });
+  providerHit.addEventListener("pointerup", () => {
+    if (!providerDragging) return;
+    providerDragging = false;
+    commitProvider(providerTarget);
+  });
+  providerHit.addEventListener("pointercancel", () => {
+    providerDragging = false; providerPreview = null; renderProvider(); renderModel();
+  });
+  providerHit.addEventListener("click", (event) => { event.preventDefault(); event.stopPropagation(); });
+  providerHit.addEventListener("keydown", (event) => {
+    let next = null;
+    if (event.key === "ArrowDown") next = Math.min(PROVIDERS.length - 1, providerIndex + 1);
+    if (event.key === "ArrowUp") next = Math.max(0, providerIndex - 1);
+    if (event.key === "Home") next = 0;
+    if (event.key === "End") next = PROVIDERS.length - 1;
+    if (next === null) return;
+    event.preventDefault(); event.stopPropagation(); commitProvider(next);
+  });
+  modelHit.addEventListener("pointerdown", (event) => {
+    if (providerBusy || providerPreview !== null || modelList(providerIndex).length < 2) return;
+    event.preventDefault(); event.stopPropagation();
+    modelDragging = true;
+    modelHit.setPointerCapture(event.pointerId);
+    previewModel(indexAt(event.clientX, modelRail, modelList(providerIndex).length));
+  });
+  modelHit.addEventListener("pointermove", (event) => {
+    if (!modelDragging) return;
+    previewModel(indexAt(event.clientX, modelRail, modelList(providerIndex).length));
+  });
+  modelHit.addEventListener("pointerup", () => {
+    if (!modelDragging) return;
+    modelDragging = false;
+    commitModel(modelTarget);
+  });
+  modelHit.addEventListener("pointercancel", () => {
+    modelDragging = false; modelPreview = null; renderModel();
+  });
+  modelHit.addEventListener("click", (event) => { event.preventDefault(); event.stopPropagation(); });
+  modelHit.addEventListener("keydown", (event) => {
+    const list = modelList(providerIndex);
+    let next = null;
+    if (event.key === "ArrowRight" || event.key === "ArrowDown") next = Math.min(list.length - 1, modelIndexes[providerIndex] + 1);
+    if (event.key === "ArrowLeft" || event.key === "ArrowUp") next = Math.max(0, modelIndexes[providerIndex] - 1);
+    if (event.key === "Home") next = 0;
+    if (event.key === "End") next = list.length - 1;
+    if (next === null) return;
+    event.preventDefault(); event.stopPropagation(); commitModel(next);
+  });
+  document.getElementById("providerFail").addEventListener("click", () => { failNext = true; });
+  renderProvider();
+  renderModel();
+})();
 </script>
 </body>
 </html>

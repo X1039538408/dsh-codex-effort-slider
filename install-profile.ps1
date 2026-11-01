@@ -139,5 +139,5 @@ if ($Uninstall) {
   Write-Host "`n卸载完成。完全退出并重开 DSH Desktop 后生效。`n" -ForegroundColor Green
 } else {
   Write-Host "`n安装完成 ✅  现在**完全退出并重开** DSH Desktop（关窗口不够，要退出进程）。" -ForegroundColor Green
-  Write-Host "重开后打开模型菜单，『推理等级』那一行下面就会出现滑条。`n"
+  Write-Host "重开后打开模型菜单，可用「按提供商筛选」入口和推理等级滑条。`n"
 }

@@ -12,7 +12,7 @@
  */
 import { readFileSync, existsSync } from "node:fs";
 import { fileURLToPath, pathToFileURL } from "node:url";
-import { createDocument, createFakeHost, createOfficialMenu, loadBundle, settle, wait } from "./harness.mjs";
+import { createDocument, createFakeHost, createModelMenu, createOfficialMenu, loadBundle, settle, wait } from "./harness.mjs";
 
 const BUNDLE = fileURLToPath(new URL("../lib/client.js", import.meta.url));
 const SOURCE = readFileSync(BUNDLE, "utf8");
@@ -54,8 +54,15 @@ function section(title) {
  */
 async function setup(options = {}) {
   const document = createDocument();
-  const menu = createOfficialMenu(document, options.menu);
+  const menu = options.menuKind === "model"
+    ? createModelMenu(document, options.modelMenu)
+    : createOfficialMenu(document, options.menu);
   const bundle = loadBundle(BUNDLE, document, { reducedMotion: options.reducedMotion === true });
+  // 可选：在挂载前给菜单一个真实几何/宿主定位读数（默认 FakeNode 全是 0）。
+  if (options.menuRect && menu.menu) menu.menu.rect = { ...options.menuRect };
+  if (typeof options.getComputedStyle === "function") {
+    bundle.window.getComputedStyle = (node) => options.getComputedStyle(node, menu.menu);
+  }
   const host = createFakeHost(options.host ?? {});
   bundle.plugin.apply(host.ctx);
   const entry = host.registered[0];
@@ -707,6 +714,642 @@ section("12. DOM 锚点契约（官方产物里必须还存在我依赖的语义
     ok(text.indexOf('role: "menuitemradio"') > 0, "[12] 子面板仍然是 menuitemradio（我的结构判定靠这个区分）");
     ok(text.indexOf('window.addEventListener("resize", place)') > 0, "[12] 官方菜单在 resize 时会重测位置（我加高后靠它重排）");
   }
+}
+
+section("12b. 供应商命名滑轨（拖动预览、松手切换）");
+
+const __provGroups = [
+  { id: "deepseek-account", name: "DeepSeek 账号", models: [{ id: "ds-1", name: "DS-1", reasoning: { defaultEffort: "high", efforts: [{ id: "low" }, { id: "high" }] } }] },
+  { id: "openai", name: "OpenAI", models: [
+    { id: "gpt-5", name: "GPT-5", reasoning: { defaultEffort: "high", efforts: [{ id: "low" }, { id: "high" }] } },
+    { id: "o3-mini", name: "o3-mini" },
+  ] },
+  { id: "anthropic", name: "Anthropic", models: [{ id: "claude-sonnet-4", name: "Claude Sonnet 4" }] },
+];
+const __provSnapshot = () => ({
+  current: { provider: "deepseek-account", model: "ds-1" },
+  groups: __provGroups,
+  status: "ready",
+  failures: [],
+  pending: null,
+  error: null,
+});
+{
+  const { internals } = await setup();
+  const ordered = internals.orderProviders([
+    { id: "openai", name: "OpenAI" },
+    { id: "deepseek-official", name: "Official" },
+    { id: "anthropic", name: "Anthropic" },
+    { id: "deepseek-account", name: "Account" },
+  ]);
+  eq(ordered.map((group) => group.id).join(","), "deepseek-account,deepseek-official,openai,anthropic",
+    "[12b] 提供商排序 = account → official → 其余保持目录顺序");
+  eq(internals.providerLevelsOf({ groups: __provGroups }).map((group) => group.id).join(","),
+    "deepseek-account,openai,anthropic", "[12b] 档位跳过没有模型的提供商、按官方顺序排列");
+
+  eq(internals.providerLabelOf("deepseek-account", "deepseek-account", "zh-CN"), "DeepSeek 账号",
+    "[12b] 账号提供商用可读名称（中文）");
+  eq(internals.providerLabelOf("deepseek-account", "deepseek-account", "en-US"), "DeepSeek account",
+    "[12b] 账号提供商用可读名称（英文）");
+  eq(internals.providerLabelOf("openai", "OpenAI", "zh-CN"), "OpenAI", "[12b] 目录里的名字优先");
+
+  const memory = { openai: "o3-mini", anthropic: "gone" };
+  eq(internals.rememberedModelOf({ id: "openai", models: __provGroups[1].models }, memory).id, "o3-mini",
+    "[12b] 记忆命中时用记住的那一个模型");
+  eq(internals.rememberedModelOf({ id: "anthropic", models: __provGroups[2].models }, memory).id, "claude-sonnet-4",
+    "[12b] 记忆里的模型已下架 → 回退该家第一个");
+  eq(JSON.stringify(internals.pruneMemory(memory, __provGroups)), JSON.stringify({ openai: "o3-mini" }),
+    "[12b] pruneMemory 丢掉已失效的组合");
+
+  eq(JSON.stringify(internals.modelSelectionFor({ provider: { id: "openai" }, model: __provGroups[1].models[0] }, { reasoningEffort: "low" })),
+    JSON.stringify({ provider: "openai", model: "gpt-5", reasoningEffort: "low" }),
+    "[12b] 目标模型支持当前档位时保留它");
+  eq(internals.modelSelectionFor({ provider: { id: "anthropic" }, model: __provGroups[2].models[0] }, { reasoningEffort: "high" }).reasoningEffort,
+    undefined, "[12b] 目标模型没有推理档位时不带该字段");
+}
+
+const __provRect = { left: 0, right: 14, top: 0, bottom: 200, width: 14, height: 200 };
+function __provY(pct) {
+  const radius = 6;
+  return __provRect.top + radius + pct * (__provRect.height - radius * 2);
+}
+/** 每一步都重新取节点：桩件每次渲染都会换掉 DOM 节点。 */
+async function __provDo(ctx, action, index) {
+  const count = ctx.internals.providerLevelsOf({ groups: __provGroups }).length;
+  const nodes = () => {
+    const host = ctx.menu.menu.querySelector('div[data-ces-part="provider-column"]');
+    return {
+      host,
+      hit: host.querySelector('div[data-ces-part="provider-track"]'),
+      rail: host.querySelector('div[data-ces-part="provider-rail"]'),
+      status: host.querySelector('span[data-ces-part="provider-status"]'),
+    };
+  };
+  if (action === "down") {
+    const n = nodes();
+    n.rail.rect = { ...__provRect };
+    n.hit.fire("onPointerDown", { clientY: __provY(index / (count - 1)), pointerId: 1 });
+  } else if (action === "move") {
+    const n = nodes();
+    n.rail.rect = { ...__provRect };
+    n.hit.fire("onPointerMove", { clientY: __provY(index / (count - 1)) });
+  } else if (action === "up") {
+    nodes().hit.fire("onPointerUp", {});
+  } else if (action === "cancel") {
+    nodes().hit.fire("onPointerCancel", {});
+  } else if (action === "key") {
+    nodes().hit.fire("onKeyDown", { key: index });
+  }
+  await settle();
+}
+{
+  // 注入 + 中性细轨 + 状态文字
+  const ctx = await setup({ host: { snapshot: __provSnapshot() } });
+  const host = ctx.menu.menu.querySelector('div[data-ces-part="provider-column"]');
+  const modelHost = ctx.menu.modelRow.querySelector('div[data-ces-part="model-host"]');
+  ok(host !== null, "[12b] 菜单右侧挂上供应商竖轨容器");
+  ok(modelHost !== null, "[12b] 模型行内保留独立模型轨容器");
+  eq(ctx.menu.effortRow.querySelector('div[data-ces-part="host"]') !== null, true, "[12b] 推理强度行仍保留原有滑轨");
+  eq(ctx.menu.modelRow.style.flexWrap, "wrap", "[12b] 模型行可在原生内容下方放模型轨");
+  eq(ctx.menu.modelRow.querySelectorAll("span").length >= 2, true, "[12b] 官方 label / value 两个 span 都还在");
+
+  const hit = host.querySelector('div[data-ces-part="provider-track"]');
+  eq(hit.getAttribute("role"), "slider", "[12b] 命中区有 role=slider");
+  eq(hit.getAttribute("aria-orientation"), "vertical", "[12b] 供应商轨道声明竖直方向");
+  eq(hit.getAttribute("aria-valuemax"), "2", "[12b] 档位上限 = 提供商数 - 1");
+  eq(hit.getAttribute("aria-valuetext"), "DeepSeek 账号", "[12b] aria 文本是当前提供商名");
+  eq(host.querySelectorAll('div[data-ces-part="provider-tick"]').length, 3, "[12b] 刻度数 = 提供商数");
+  eq(host.querySelectorAll('span[data-ces-part="provider-label"]').length, 3, "[12b] 每个竖向停靠点都有完整名称");
+
+  const status = host.querySelector('span[data-ces-part="provider-status"]');
+  eq(status.textContent, "DeepSeek 账号 · DS-1", "[12b] 未拖动时显示「当前提供商 · 当前模型」");
+  eq(status.getAttribute("data-preview"), "0", "[12b] 未拖动时不是预览态");
+
+  const root = host.querySelector('div[data-ces-part="provider-slider"]');
+  eq(root.getAttribute("data-energy"), null, "[12b] 提供商竖轨没有位置驱动的能量属性");
+  eq(host.querySelector('div[data-ces-part="provider-energy"]'), null, "[12b] 没有星云能量层（不暗示等级）");
+  eq(host.querySelector('div[data-ces-part="provider-stars"]'), null, "[12b] 没有常驻星尘层");
+
+  const css = ctx.internals.CSS;
+  ok(css.includes(".ces-provider-rail--vertical") && css.includes(".ces-provider-spark"), "[12b] 竖轨与确认脉冲样式存在");
+  ctx.react.unmount();
+}
+{
+  // 拖动只预览；松手才提交一次；确认后闪一次脉冲
+  const ctx = await setup({ host: { snapshot: __provSnapshot() } });
+  await __provDo(ctx, "down", 2);
+  await __provDo(ctx, "move", 2);
+  const status = ctx.menu.menu.querySelector('span[data-ces-part="provider-status"]');
+  eq(ctx.host.selects.length, 0, "[12b] 拖动过程中一次都不写官方目录");
+  eq(status.getAttribute("data-preview"), "1", "[12b] 拖动中是预览态");
+  eq(status.textContent, "Anthropic · Claude Sonnet 4", "[12b] 预览显示「提供商 · 将使用的模型」");
+
+  await __provDo(ctx, "up");
+  eq(ctx.host.selects.length, 1, "[12b] 松手只提交一次");
+  eq(JSON.stringify(ctx.host.selects[0]), JSON.stringify({ provider: "anthropic", model: "claude-sonnet-4" }),
+    "[12b] 提交目标是松手时的那一家，用它的首个模型");
+  eq(JSON.stringify(ctx.host.store.getSnapshot().current), JSON.stringify({ provider: "anthropic", model: "claude-sonnet-4" }),
+    "[12b] 宿主快照反映实际切换结果");
+
+  const sparks = ctx.menu.menu.querySelectorAll('span[data-ces-part="provider-spark"]');
+  eq(sparks.length, ctx.internals.PROVIDER_PULSE_STARS, "[12b] 确认后目标刻度闪出固定数量的星点");
+  await wait(ctx.internals.PROVIDER_PULSE_MS + 120);
+  eq(ctx.menu.menu.querySelectorAll('span[data-ces-part="provider-spark"]').length, 0, "[12b] 脉冲是短促一次性的，随后消失");
+  ctx.react.unmount();
+}
+{
+  // 取消：不提交、回到真实状态
+  const ctx = await setup({ host: { snapshot: __provSnapshot() } });
+  await __provDo(ctx, "down", 1);
+  await __provDo(ctx, "move", 2);
+  await __provDo(ctx, "cancel");
+  eq(ctx.host.selects.length, 0, "[12b] 取消（pointercancel）不提交");
+  const status = ctx.menu.menu.querySelector('span[data-ces-part="provider-status"]');
+  eq(status.getAttribute("data-preview"), "0", "[12b] 取消后退出预览态");
+  eq(status.textContent, "DeepSeek 账号 · DS-1", "[12b] 取消后回到真实身份");
+  ctx.react.unmount();
+}
+{
+  // 同家：点一下也不写
+  const ctx = await setup({ host: { snapshot: __provSnapshot() } });
+  await __provDo(ctx, "down", 0);
+  await __provDo(ctx, "up");
+  eq(ctx.host.selects.length, 0, "[12b] 落在当前提供商上不写官方目录");
+  ctx.react.unmount();
+}
+{
+  // 键盘：每次有效按键提交一次
+  const ctx = await setup({ host: { snapshot: __provSnapshot() } });
+  await __provDo(ctx, "key", "ArrowDown");
+  eq(ctx.host.selects.length, 1, "[12b] ↓ 键提交一次");
+  eq(ctx.host.selects[0].provider, "openai", "[12b] ↓ 键切到下一家");
+  await __provDo(ctx, "key", "ArrowUp");
+  eq(ctx.host.selects.length, 2, "[12b] ↑ 键再提交一次");
+  eq(ctx.host.selects[1].provider, "deepseek-account", "[12b] ↑ 键切回上一家");
+  await __provDo(ctx, "key", "End");
+  eq(ctx.host.selects.length, 3, "[12b] End 键再提交一次");
+  eq(ctx.host.selects[2].provider, "anthropic", "[12b] End 键切到最后一家");
+  ctx.react.unmount();
+}
+{
+  // 记忆：确认后记住模型；拖走再拖回用记住的那个
+  const ctx = await setup({ host: { snapshot: __provSnapshot() } });
+  await __provDo(ctx, "down", 1);
+  await __provDo(ctx, "up");
+  eq(JSON.stringify(ctx.host.selects[0]), JSON.stringify({ provider: "openai", model: "gpt-5", reasoningEffort: "high" }),
+    "[12b] 第一次进 OpenAI 用目录里第一个模型");
+
+  ctx.host.store.set({ ...ctx.host.store.getSnapshot(), current: { provider: "openai", model: "o3-mini" } });
+  await settle();
+  const stored = JSON.parse(ctx.bundle.localStorage.getItem(ctx.internals.PROVIDER_MEMORY_KEY));
+  eq(stored.models.openai, "o3-mini", "[12b] 快照确认后把该家模型记进记忆");
+
+  await __provDo(ctx, "down", 2);
+  await __provDo(ctx, "up");
+  await __provDo(ctx, "down", 1);
+  await __provDo(ctx, "up");
+  eq(JSON.stringify(ctx.host.selects[ctx.host.selects.length - 1]), JSON.stringify({ provider: "openai", model: "o3-mini" }),
+    "[12b] 拖回 OpenAI 时用记住的模型");
+  ctx.react.unmount();
+}
+{
+  // 在途合并：慢请求期间再次松手，落地后只补发最新目标
+  let releaseFirst = null;
+  const ctx = await setup({
+    host: {
+      snapshot: __provSnapshot(),
+      select: () => new Promise((resolve) => {
+        if (releaseFirst === null) releaseFirst = () => resolve({ ok: true });
+        else resolve({ ok: true });
+      }),
+    },
+  });
+  await __provDo(ctx, "down", 1);
+  await __provDo(ctx, "up");
+  await __provDo(ctx, "down", 2);
+  await __provDo(ctx, "up");
+  eq(ctx.host.selects.length, 1, "[12b] 在途期间不并发第二个写入");
+  eq(ctx.host.selects[0].provider, "openai", "[12b] 第一个目标是先松手的那家");
+  releaseFirst();
+  await settle();
+  eq(ctx.host.selects.length, 2, "[12b] 在途落地后补发最新目标");
+  eq(ctx.host.selects[1].provider, "anthropic", "[12b] 补发的是最后松手的那家");
+  ctx.react.unmount();
+}
+{
+  // 失败：不谎报、行内错误、无脉冲、预览回退
+  const ctx = await setup({
+    host: { snapshot: __provSnapshot(), select: () => ({ ok: false, error: { message: "provider unavailable" } }) },
+  });
+  await __provDo(ctx, "down", 1);
+  await __provDo(ctx, "up");
+  const host = ctx.menu.menu.querySelector('div[data-ces-part="provider-column"]');
+  const errorNode = host.querySelector('div[data-ces-part="provider-error"]');
+  ok(errorNode !== null && errorNode.textContent.includes("provider unavailable"), "[12b] 失败时右栏显示宿主原始原因");
+  eq(ctx.host.store.getSnapshot().current.provider, "deepseek-account", "[12b] 失败不谎报：宿主里仍是原来的提供商");
+  eq(ctx.host.selects.length, 1, "[12b] 失败后不会偷偷补发第二次写入");
+  eq(host.querySelectorAll('span[data-ces-part="provider-spark"]').length, 0, "[12b] 失败不播放确认脉冲");
+  const status = host.querySelector('span[data-ces-part="provider-status"]');
+  eq(status.getAttribute("data-preview"), "0", "[12b] 失败后退出预览态");
+  ctx.react.unmount();
+}
+{
+  // 不注入：单一提供商 / 锁定 / 子代理
+  const single = [{ id: "openai", name: "OpenAI", models: [{ id: "gpt-5", name: "GPT-5" }] }];
+  const singleCtx = await setup({
+    host: { snapshot: { current: { provider: "openai", model: "gpt-5" }, groups: single, status: "ready", failures: [], pending: null, error: null } },
+  });
+  eq(singleCtx.menu.menu.querySelector('div[data-ces-part="provider-column"]'), null,
+    "[12b] 只有一个提供商时不注入滑条");
+  singleCtx.react.unmount();
+
+  const lockedCtx = await setup({ host: { snapshot: __provSnapshot() }, props: { locked: true } });
+  eq(lockedCtx.menu.menu.querySelector('div[data-ces-part="provider-column"]'), null,
+    "[12b] 锁定会话不注入滑条");
+  lockedCtx.react.unmount();
+
+  const subCtx = await setup({ host: { snapshot: __provSnapshot(), subagent: true } });
+  eq(subCtx.menu.menu.querySelector('div[data-ces-part="provider-column"]'), null,
+    "[12b] 子代理会话不注入滑条");
+  subCtx.react.unmount();
+}
+{
+  // 关闭菜单：两行都还原
+  const ctx = await setup({ host: { snapshot: __provSnapshot() } });
+  const modelRow = ctx.menu.modelRow;
+  const effortRow = ctx.menu.effortRow;
+  ok(modelRow.querySelector('div[data-ces-part="model-host"]') !== null, "[12b] 前置：模型行已有模型轨容器");
+  const menu = ctx.menu.menu;
+  const providerColumn = menu.querySelector('div[data-ces-part="provider-column"]');
+  ok(providerColumn !== null, "[12b] 前置：菜单右栏有供应商宿主");
+  ctx.menu.close();
+  ctx.bundle.flushObservers();
+  await settle();
+  eq(modelRow.style.flexWrap, "", "[12b] 菜单关闭后「模型」行折行还原");
+  eq(modelRow.style.paddingTop, "", "[12b] 「模型」行内距还原");
+  eq(providerColumn.parentNode, null, "[12b] 菜单关闭后移除供应商右栏");
+  eq(menu.style.width, "", "[12b] 菜单宽度恢复原值");
+  eq(menu.style.paddingRight, "", "[12b] 菜单右侧内边距恢复原值");
+  eq(menu.style.left, "", "[12b] 菜单左偏移还原");
+  eq(menu.style.right, "", "[12b] 菜单右偏移还原");
+  eq(menu.getAttribute("data-ces-provider-layout"), null, "[12b] 菜单布局标记还原");
+  eq(effortRow.style.flexWrap, "", "[12b] 「推理等级」行也一起还原");
+  ctx.react.unmount();
+}
+{
+  // 样式守卫
+  const { internals } = await setup();
+  const css = internals.CSS;
+  ok(css.includes(".ces-provider-status"), "[12b] 状态文字样式存在");
+  ok(!css.includes(".ces-provider-label"), "[12b] 旧的一行标签样式已移除");
+  ok(!css.includes(".ces-provider-chip"), "[12b] 旧的胶囊样式已移除");
+  ok(!/\.ces-provider[^{]*\{[^}]*data-ds-dark-theme/.test(css), "[12b] 提供商样式不写自造深色分支");
+  eq(internals.PROVIDER_RAIL_KNOB / 2, 6, "[12b] 细轨半径与测试里的几何一致");
+}
+
+section("12c. 供应商与模型命名滑轨");
+
+const __namedGroups = [
+  { id: "deepseek-account", name: "DeepSeek Account", models: [{ id: "ds-1", name: "DeepSeek-V4.1-Flash" }] },
+  { id: "openai", name: "OpenAI", models: [
+    { id: "gpt-5", name: "GPT-5" },
+    { id: "o3-mini", name: "o3-mini" },
+    { id: "o4-mini", name: "o4-mini" },
+  ] },
+  { id: "anthropic", name: "Anthropic", models: [{ id: "claude-sonnet-4", name: "Claude Sonnet 4" }] },
+];
+const __namedSnapshot = (provider = "openai", model = "gpt-5") => ({
+  current: { provider, model }, groups: __namedGroups, status: "ready", failures: [], pending: null, error: null,
+});
+function __namedNodes(ctx) {
+  const providerHost = ctx.menu.menu.querySelector('div[data-ces-part="provider-column"]');
+  const modelHost = ctx.menu.modelRow.querySelector('div[data-ces-part="model-host"]');
+  return {
+    host: providerHost,
+    providerHost,
+    modelHost,
+    status: providerHost?.querySelector('span[data-ces-part="provider-status"]') ?? null,
+    providerLabels: providerHost?.querySelectorAll('span[data-ces-part="provider-label"]') ?? [],
+    modelLabels: modelHost?.querySelectorAll('span[data-ces-part="model-label"]') ?? [],
+    providerViewport: providerHost?.querySelector('div[data-ces-part="provider-viewport"]') ?? null,
+    providerList: providerHost?.querySelector('div[data-ces-part="provider-list"]') ?? null,
+    modelViewport: modelHost?.querySelector('div[data-ces-part="model-viewport"]') ?? null,
+    providerTrack: providerHost?.querySelector('div[data-ces-part="provider-track"]') ?? null,
+    providerRail: providerHost?.querySelector('div[data-ces-part="provider-rail"]') ?? null,
+    modelTrack: modelHost?.querySelector('div[data-ces-part="model-track"]') ?? null,
+    modelRail: modelHost?.querySelector('div[data-ces-part="model-rail"]') ?? null,
+  };
+}
+function __clickLabel(node) { node.fire("onClick", {}); }
+{
+  const ctx = await setup({ host: { snapshot: __namedSnapshot() } });
+  const n = __namedNodes(ctx);
+  ok(n.providerHost !== null, "[12c] 供应商宿主独立挂在菜单右侧栏");
+  ok(n.modelHost !== null, "[12c] 模型横轨继续挂在官方模型行");
+  eq(n.providerHost.parentNode, ctx.menu.menu, "[12c] 供应商栏是菜单直属子项");
+  eq(n.modelHost.parentNode, ctx.menu.modelRow, "[12c] 模型横轨仍归属官方模型行");
+  eq(ctx.menu.menu.getAttribute("data-ces-provider-layout"), "side", "[12c] 可用宽度充足时采用右栏布局");
+  const columnWidth = ctx.internals.PROVIDER_COLUMN_WIDTH;
+  eq(ctx.menu.menu.style.paddingRight, columnWidth + "px", "[12c] 菜单加宽量全部变成右侧内边距（官方行宽度保持原值）");
+  ok(parseFloat(ctx.menu.menu.style.width) > columnWidth, "[12c] 菜单宽度同步加宽");
+  eq(n.providerTrack.getAttribute("aria-orientation"), "vertical", "[12c] 供应商 ARIA 方向为 vertical");
+  eq(n.modelTrack.getAttribute("aria-orientation"), "horizontal", "[12c] 模型横轨方向和交互保持不变");
+  eq(n.providerLabels.map((node) => node.textContent).join("|"), "DeepSeek Account|OpenAI|Anthropic", "[12c] 右栏供应商按顺序显示完整名称");
+  eq(n.modelLabels.map((node) => node.textContent).join("|"), "GPT-5|o3-mini|o4-mini", "[12c] 左栏模型横轨保留完整名称");
+  eq(n.providerLabels[1].getAttribute("data-selected"), "1", "[12c] 当前供应商有明确选中态");
+  eq(n.modelLabels[0].getAttribute("data-selected"), "1", "[12c] 当前模型有明确选中态");
+  eq(n.status.getAttribute("data-visible"), "0", "[12c] 静止时隐藏重复状态行");
+  ok(n.providerViewport.className.includes("ces-provider-sidebar__body") && n.modelViewport.className.includes("ces-named-viewport"), "[12c] 供应商竖栏和模型横轨分开布局");
+  ok(n.host.querySelector('div[data-ces-part="host"]') === null, "[12c] provider/model 宿主不与 effort 宿主串联");
+  ok(ctx.internals.CSS.includes(".ces-provider-column[data-layout='side']") && ctx.internals.CSS.includes(".ces-provider-rail--vertical"), "[12c] 右侧竖轨和两栏布局样式存在");
+  // 加宽靠「宽度 + 右侧内边距」实现：官方行可用宽度回到原值，不会铺满加宽后的菜单。
+  ok(!ctx.internals.CSS.includes("--ces-menu-left-width"), "[12c] 不再依赖 max-width 覆盖官方行的 min-width:100%");
+  ok(ctx.internals.CSS.includes("width:220px"), "[12c] 右栏宽度与菜单加宽量一致");
+  ctx.react.unmount();
+}
+{
+  const extraModels = [
+    { id: "gpt-6-codex", name: "GPT-6.1 Codex" },
+    { id: "gpt-6-mini", name: "GPT-6.1 Mini" },
+    { id: "gpt-6-fast", name: "GPT-6.1 Sol Fast" },
+    { id: "gpt-6-long", name: "GPT-6.1 Long Context" },
+    { id: "gpt-6-preview", name: "GPT-6.1 Preview" },
+  ];
+  const pixelModels = [
+    { id: "gpt-6-1-sol", name: "GPT-6.1 Sol" },
+    { id: "gpt-6-astra", name: "GPT-6 Astra" },
+    { id: "gpt-6-luna", name: "GPT-6 Luna" },
+    { id: "gpt-6-nova", name: "GPT-6 Nova" },
+    ...extraModels,
+  ];
+  const extraProviders = [
+    { id: "woyao-claude", name: "WOYAO · Claude", models: [{ id: "claude", name: "Claude" }] },
+    { id: "woyao-gpt", name: "WOYAO · GPT", models: [{ id: "woyao-gpt-model", name: "GPT" }] },
+    { id: "woyao-general", name: "WOYAO · 通用", models: [{ id: "woyao-general-model", name: "通用模型" }] },
+    { id: "chatgpt", name: "ChatGPT subscription", models: [{ id: "chatgpt-sub", name: "Subscription Model" }] },
+    { id: "kimi", name: "Kimi subscription", models: [{ id: "kimi-sub", name: "Kimi Model" }] },
+  ];
+  const wideGroups = __namedGroups.concat([{
+    id: "pixel-codex", name: "Pixel Codex", models: pixelModels,
+  }], extraProviders);
+  const ctx = await setup({
+    host: {
+      snapshot: { ...__namedSnapshot("pixel-codex", "gpt-6-1-sol"), groups: wideGroups },
+    },
+  });
+  const n = __namedNodes(ctx);
+  eq(n.providerLabels.length, 9, "[12c] 九家供应商全部出现在同一条轨道");
+  eq(n.modelLabels.map((node) => node.textContent).join("|"), pixelModels.map((model) => model.name).join("|"), "[12c] 九个模型完整名称全部渲染");
+  eq(n.providerList.style["--ces-count"], 9, "[12c] 供应商竖列有九个等高停靠点");
+  eq(n.modelViewport.children[0].children[0].style["--ces-count"], 9, "[12c] 模型列宽随九个刻度自适应");
+  eq(n.providerList.getAttribute("data-density"), null, "[12c] 九家供应商仍用正常字号（不到 10 家不缩字）");
+  eq(n.modelViewport.children[0].children[0].getAttribute("data-density"), "compact", "[12c] 九个模型使用紧凑字号");
+  const modelSection = n.modelHost.children[0];
+  eq(modelSection.children.length, 1, "[12c] 模型区只剩一个视口，不再重复显示「模型」小标题");
+  eq(modelSection.children[0].getAttribute("data-ces-part"), "model-viewport", "[12c] 模型区首个子节点直接是名称视口");
+  ok(ctx.internals.CSS.includes("word-break:normal;overflow-wrap:break-word") && ctx.internals.CSS.includes("data-density='dense'") && ctx.internals.CSS.includes("@container ces-rail (max-width:600px)"), "[12c] 标签优先自然换行、支持密集字号并按宽度自适应");
+  ok(ctx.internals.CSS.includes("min-width:0;max-width:100%") && ctx.internals.CSS.includes("width:calc(100% - 4px)"), "[12c] 标签不会跨列溢出，选中态使用内缩 chip");
+  ok(ctx.internals.CSS.includes("grid-template-rows:minmax(0,1fr)") && ctx.internals.CSS.includes("padding-block:2px"), "[12c] 竖轨与名称列表共用同一拉伸行并留出上下内缩");
+  const knob = n.providerHost.querySelector('div[data-ces-part="provider-knob"]');
+  eq(String(knob.style.top).slice(0, 5), "38.88", "[12c] 竖轨旋钮落在当前供应商刻度中心");
+  __clickLabel(n.providerLabels[8]);
+  await settle();
+  eq(ctx.host.selects[0]?.provider, "kimi", "[12c] 最后一家供应商可由末位名称直接选择");
+  ctx.react.unmount();
+}
+{
+  // 供应商字号随数量分档：9 家正常、10–12 家紧凑、13 家以上密集
+  for (const [total, expected] of [[10, "compact"], [13, "dense"]]) {
+    const groups = Array.from({ length: total }, (_, i) => ({
+      id: "p" + i, name: "Provider " + (i + 1), models: [{ id: "p" + i + "-m", name: "Model" }],
+    }));
+    const ctx = await setup({
+      host: { snapshot: { current: { provider: "p0", model: "p0-m" }, groups, status: "ready", failures: [], pending: null, error: null } },
+    });
+    const host = ctx.menu.menu.querySelector('div[data-ces-part="provider-column"]');
+    const list = host?.querySelector('div[data-ces-part="provider-list"]');
+    eq(list?.getAttribute("data-density"), expected, "[12c] " + total + " 家供应商使用 " + expected + " 字号");
+    ctx.react.unmount();
+  }
+}
+{
+  // 加宽改为“居中生长”：保持原菜单中心，靠边时钳制
+  const { internals } = await setup();
+  eq(internals.centeredMenuLeft(500, 220, 1200, 8), 390, "[12c] 空间充足时菜单保持原中心");
+  eq(internals.centeredMenuLeft(100, 220, 1200, 8), 8, "[12c] 贴左缘时钳制在左边距");
+  eq(internals.centeredMenuLeft(1100, 220, 1200, 8), 972, "[12c] 贴右缘时钳制在右边距");
+  eq(internals.centeredMenuLeft(500, 220, 0, 8), 390, "[12c] 视口未知时不做钳制");
+}
+{
+  // 宿主右锚定时，加宽后把菜单钉回原中心（左右各长一半）
+  const ctx = await setup({
+    host: { snapshot: __namedSnapshot() },
+    menuRect: { left: 300, right: 500, top: 0, bottom: 200, width: 200, height: 200 },
+    getComputedStyle: (node, menuNode) => ({
+      position: "fixed",
+      left: node === menuNode ? "300px" : "0px",
+      paddingRight: "4px",
+    }),
+  });
+  const menu = ctx.menu.menu;
+  // 原中心 300+100=400，加宽后 420 → 目标左 190
+  eq(menu.style.left, "190px", "[12c] 加宽后菜单钉在加宽前的中心");
+  eq(menu.style.right, "auto", "[12c] 钉中心时清掉右侧锚定");
+  ctx.react.unmount();
+}
+{
+  // 两栏只看视口放不放得下：菜单贴着右侧但窗口够宽仍两栏，真正窄了才竖排
+  const ctx = await setup({
+    host: { snapshot: __namedSnapshot() },
+    menuRect: { left: 1000, right: 1200, top: 0, bottom: 300, width: 200, height: 300 },
+  });
+  const host = ctx.menu.menu.querySelector('div[data-ces-part="provider-column"]');
+  eq(ctx.menu.menu.getAttribute("data-ces-provider-layout"), "side", "[12c] 菜单贴右但窗口够宽时仍是两栏");
+  eq(host.getAttribute("data-layout"), "side", "[12c] 右栏按两栏布局渲染");
+  ctx.bundle.window.innerWidth = 420;
+  ctx.bundle.flushObservers();
+  await settle();
+  eq(ctx.menu.menu.getAttribute("data-ces-provider-layout"), "stacked", "[12c] 视口放不下时才回退竖排");
+  eq(host.getAttribute("data-layout"), "stacked", "[12c] 右栏切换为堆叠布局");
+  ctx.react.unmount();
+}
+{
+  // 点击模型标签精确选择；事件不钻入官方模型子面板，且纯模型切换无脉冲
+  const ctx = await setup({ host: { snapshot: __namedSnapshot() } });
+  let drilled = false;
+  ctx.menu.modelRow.handlers.onClick = () => { drilled = true; };
+  __clickLabel(__namedNodes(ctx).modelLabels[1]);
+  await settle();
+  eq(ctx.host.selects.length, 1, "[12c] 点击模型名称只提交一次");
+  eq(JSON.stringify(ctx.host.selects[0]), JSON.stringify({ provider: "openai", model: "o3-mini" }), "[12c] 模型轨提交准确的 model id");
+  ok(!drilled, "[12c] 点击模型标签不会钻入官方子面板");
+  ctx.host.store.set({ ...__namedSnapshot("openai", "o3-mini") });
+  await settle();
+  eq(__namedNodes(ctx).modelLabels[1].getAttribute("data-selected"), "1", "[12c] 快照确认后模型标签选中态更新");
+  eq(ctx.menu.menu.querySelectorAll('span[data-ces-part="provider-spark"]').length, 0, "[12c] 同家换模型不播放提供商脉冲");
+  ctx.react.unmount();
+}
+{
+  // 官方菜单增加速度/输出详略等原生行后，供应商 portal 仍挂在精确的「模型」行上。
+  const ctx = await setup({ host: { snapshot: __provSnapshot() } });
+  for (const labelText of ["速度", "输出详略"]) {
+    const item = ctx.document.createElement("button");
+    item.setAttribute("role", "menuitem");
+    const label = ctx.document.createElement("span");
+    label.textContent = labelText;
+    item.appendChild(label);
+    ctx.menu.menu.appendChild(item);
+  }
+  ctx.bundle.flushObservers();
+  await settle();
+  const n = __namedNodes(ctx);
+  ok(n.host !== null, "[12c] 菜单扩展到四个原生项目后供应商/模型滑轨仍存在");
+  eq(n.host.parentNode, ctx.menu.menu, "[12c] 扩展菜单后供应商竖栏仍为菜单直属子项");
+  eq(n.modelHost.parentNode, ctx.menu.modelRow, "[12c] 模型轨仍留在模型行而非其他原生行");
+  ok(ctx.menu.effortRow.querySelector('div[data-ces-part="host"]') !== null, "[12c] 菜单增加原生项目后推理强度滑轨仍存在");
+  ctx.react.unmount();
+}
+{
+  // 松手后的合成 click 可能因宿主重绘落在官方「模型」按钮上；仅吞这一击。
+  const ctx = await setup({ host: { snapshot: __namedSnapshot() } });
+  const n = __namedNodes(ctx);
+  let drilled = 0;
+  ctx.menu.modelRow.handlers.onClick = () => { drilled += 1; };
+  n.modelRail.rect = { left: 0, right: 336, top: 0, bottom: 14, width: 336, height: 14 };
+  n.modelTrack.fire("onPointerDown", { clientX: 168, pointerId: 23 });
+  n.modelTrack.fire("onPointerUp", {});
+  ok((ctx.document.documentElement.listeners.get("click")?.size ?? 0) > 0, "[12c] 模型松手注册 document 捕获守卫");
+  const syntheticState = { prevented: false, immediateStopped: false };
+  const syntheticClick = {
+    target: ctx.menu.modelRow,
+    preventDefault() { syntheticState.prevented = true; },
+    stopPropagation() {},
+    stopImmediatePropagation() { syntheticState.immediateStopped = true; },
+  };
+  ctx.document.dispatch("click", syntheticClick);
+  if (!syntheticState.immediateStopped) ctx.menu.modelRow.fire("onClick", {});
+  ok(syntheticState.prevented && syntheticState.immediateStopped, "[12c] 松手后的合成 click 在 document 捕获阶段被拦截");
+  eq(drilled, 0, "[12c] 松手不会误打开官方模型子面板");
+  const intentionalState = { prevented: false, immediateStopped: false };
+  const intentionalClick = {
+    target: ctx.menu.modelRow,
+    preventDefault() { intentionalState.prevented = true; },
+    stopPropagation() {},
+    stopImmediatePropagation() { intentionalState.immediateStopped = true; },
+  };
+  ctx.document.dispatch("click", intentionalClick);
+  if (!intentionalState.immediateStopped) ctx.menu.modelRow.fire("onClick", {});
+  eq(drilled, 1, "[12c] 一次性守卫不会吞掉用户后续有意点击");
+  ctx.react.unmount();
+}
+{
+  const ctx = await setup({ host: { snapshot: __namedSnapshot() } });
+  __namedNodes(ctx).modelTrack.fire("onKeyDown", { key: "ArrowRight" });
+  await settle();
+  eq(ctx.host.selects.length, 1, "[12c] 模型滑轨方向键只提交一次");
+  eq(ctx.host.selects[0].model, "o3-mini", "[12c] → 选择当前供应商的下一模型");
+  eq(ctx.host.selects[0].provider, "openai", "[12c] 模型方向键不跨供应商");
+  ctx.react.unmount();
+}
+{
+  const ctx = await setup({
+    host: {
+      snapshot: __namedSnapshot(),
+      select: () => ({ ok: false, error: { message: "model unavailable" } }),
+    },
+  });
+  __clickLabel(__namedNodes(ctx).modelLabels[1]);
+  await settle();
+  eq(ctx.host.selects.length, 1, "[12c] 失败模型选择仍只请求一次");
+  ok(__namedNodes(ctx).host.querySelector('div[data-ces-part="provider-error"]')?.textContent.includes("model unavailable"), "[12c] 模型切换失败显示宿主原因");
+  eq(__namedNodes(ctx).status.getAttribute("data-visible"), "1", "[12c] 切换错误时显示状态行");
+  eq(__namedNodes(ctx).modelLabels[0].getAttribute("data-selected"), "1", "[12c] 失败后模型轨回到真实快照");
+  eq(ctx.menu.menu.querySelectorAll('span[data-ces-part="provider-spark"]').length, 0, "[12c] 失败不播放提供商脉冲");
+  ctx.react.unmount();
+}
+{
+  // 模型轨拖动只预览，松手一次提交；pointercancel 不写入
+  const ctx = await setup({ host: { snapshot: __namedSnapshot() } });
+  let n = __namedNodes(ctx);
+  n.modelRail.rect = { left: 0, right: 336, top: 0, bottom: 14, width: 336, height: 14 };
+  n.modelTrack.fire("onPointerDown", { clientX: 168, pointerId: 2 });
+  n.modelTrack.fire("onPointerMove", { clientX: 280 });
+  await settle();
+  eq(ctx.host.selects.length, 0, "[12c] 模型拖动预览阶段零写入");
+  eq(__namedNodes(ctx).status.getAttribute("data-visible"), "1", "[12c] 模型预览时显示当前目标状态");
+  n = __namedNodes(ctx);
+  eq(n.modelLabels[2].getAttribute("data-selected"), "1", "[12c] 拖动预览时选中标记跟随目标刻度");
+  n.modelTrack.fire("onPointerUp", {});
+  await settle();
+  eq(ctx.host.selects.length, 1, "[12c] 松手只提交一次模型选择");
+  eq(ctx.host.selects[0].model, "o4-mini", "[12c] 松手提交最终目标刻度");
+  ctx.react.unmount();
+
+  const cancelled = await setup({ host: { snapshot: __namedSnapshot() } });
+  let cn = __namedNodes(cancelled);
+  cn.modelRail.rect = { left: 0, right: 336, top: 0, bottom: 14, width: 336, height: 14 };
+  cn.modelTrack.fire("onPointerDown", { clientX: 168, pointerId: 3 });
+  cn.modelTrack.fire("onPointerMove", { clientX: 280 });
+  cn.modelTrack.fire("onPointerCancel", {});
+  await settle();
+  eq(cancelled.host.selects.length, 0, "[12c] 模型轨 pointercancel 零写入");
+  eq(__namedNodes(cancelled).modelLabels[0].getAttribute("data-selected"), "1", "[12c] 取消后回到宿主当前模型");
+  cancelled.react.unmount();
+}
+{
+  // 供应商切换后，模型轨选项随真实快照更新；拖动经过当前提供商不会清除预览
+  const ctx = await setup({ host: { snapshot: __provSnapshot() } });
+  let n = __namedNodes(ctx);
+  eq(n.modelLabels.map((node) => node.textContent).join("|"), "DS-1", "[12c] 初始模型轨只列当前供应商的模型");
+  await __provDo(ctx, "down", 2);
+  await __provDo(ctx, "move", 1);
+  eq(ctx.host.selects.length, 0, "[12c] 供应商慢拖经过当前刻度不写入");
+  eq(__namedNodes(ctx).status.getAttribute("data-preview"), "1", "[12c] 慢拖经过当前刻度仍保持预览态");
+  eq(__namedNodes(ctx).status.getAttribute("data-visible"), "1", "[12c] 供应商预览期间状态行显示目标");
+  await __provDo(ctx, "cancel");
+  await __provDo(ctx, "down", 1);
+  await __provDo(ctx, "up");
+  await settle();
+  eq(ctx.host.selects.length, 1, "[12c] 松手切换供应商只写一次");
+  eq(ctx.host.selects[0].provider, "openai", "[12c] 供应商轨选择目标正确");
+  ctx.react.unmount();
+}
+{
+  // 提供商命名标签点击也只提交一次且吞掉合成 click
+  const ctx = await setup({ host: { snapshot: __namedSnapshot() } });
+  let drilled = false;
+  ctx.menu.modelRow.handlers.onClick = () => { drilled = true; };
+  __clickLabel(__namedNodes(ctx).providerLabels[2]);
+  await settle();
+  eq(ctx.host.selects.length, 1, "[12c] 点击供应商名称只提交一次");
+  eq(ctx.host.selects[0].provider, "anthropic", "[12c] 供应商标签提交对应 provider");
+  ok(!drilled, "[12c] 供应商标签点击不会进入官方模型子面板");
+  ctx.react.unmount();
+}
+{
+  // 官方重绘只移除行内 portal host：MutationObserver 原位恢复，不重复修改行样式
+  const ctx = await setup({ host: { snapshot: __namedSnapshot() } });
+  const first = __namedNodes(ctx).host;
+  first.remove();
+  ctx.bundle.flushObservers();
+  await settle();
+  const recovered = __namedNodes(ctx);
+  ok(recovered.host !== null && recovered.host !== first, "[12c] 官方行保留时移除宿主会自动重建 portal host");
+  eq(recovered.providerLabels.length, 3, "[12c] 重建后供应商名称滑轨恢复");
+  eq(recovered.modelLabels.length, 3, "[12c] 重建后模型名称滑轨恢复");
+  eq(ctx.menu.modelRow.style.flexWrap, "wrap", "[12c] 重建不清除官方行的插件样式");
+  ctx.react.unmount();
+}
+{
+  // 菜单关闭时只保留官方行并完整还原
+  const ctx = await setup({ host: { snapshot: __namedSnapshot() } });
+  const host = __namedNodes(ctx).host;
+  ctx.menu.close();
+  ctx.bundle.flushObservers();
+  await settle();
+  eq(host.parentNode, null, "[12c] 关闭菜单时行内滑轨宿主被摘除");
+  eq(ctx.menu.modelRow.style.flexWrap, "", "[12c] 关闭菜单后模型行样式还原");
+  ctx.react.unmount();
 }
 
 section("13. 宿主半边（lib/index.js）");

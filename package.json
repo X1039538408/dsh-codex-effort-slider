@@ -1,7 +1,7 @@
 {
   "name": "dsh-codex-effort-slider",
-  "version": "1.1.4",
-  "description": "Codex 风格的推理等级滑条：把 DSH 输入框工具行的推理等级档位换成一条可拖动的连续滑条 / A Codex-style reasoning-effort slider for DeepSeek Harness",
+  "version": "1.9.0",
+  "description": "推理等级主滑轨 + 供应商/模型命名滑轨 / Reasoning effort slider with named provider and model rails for DeepSeek Harness",
   "license": "MIT",
   "author": "Microqian2th",
   "repository": {
