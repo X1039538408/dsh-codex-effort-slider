@@ -41,6 +41,8 @@
   ],
   "scripts": {
     "test": "node test/client.test.mjs",
+    "test:visual": "node test/visual.test.mjs",
+    "test:all": "node test/client.test.mjs && node test/visual.test.mjs",
     "preview": "node preview/make-preview.mjs",
     "pack": "powershell -NoProfile -ExecutionPolicy Bypass -File ./pack-dist.ps1"
   },

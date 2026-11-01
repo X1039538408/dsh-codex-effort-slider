@@ -1417,9 +1417,9 @@ section("12d. 模型名跨滑轨上下两层交错");
   ok(css.includes(".ces-name-token{white-space:nowrap}"), "[12d] 词内不断行（竖排单字的直接原因）");
   ok(css.includes("word-break:keep-all"), "[12d] 名字按词边界换行");
   ok(css.includes(".ces-named-labels--band"), "[12d] 交错 band 有独立样式");
-  ok(css.includes("width:max-content") && css.includes("max-width:calc(200% / var(--ces-count))"), "[12d] 名字按内容自适应宽度，最多占两格");
-  ok(css.includes(".ces-named-viewport[data-narrow='1']{overflow-x:auto"), "[12d] 窄屏由最外层视口横向滚动（滚动条不夹在两排名字中间）");
-  ok(internals.narrowRailFor(520, 20) === false && internals.narrowRailFor(340, 20) === true, "[12d] 只有手机竖屏那种窄度才触发横向滚动");
+  ok(css.includes("width:var(--ces-cap)") && css.includes("max-width:var(--ces-cap)"), "[12d] 名字宽度由 JS 算成像素上限（两格减间隙），不依赖 CSS 变量里的百分比 calc");
+  ok(css.includes(".ces-named-viewport{width:100%;min-width:0;overflow-x:auto"), "[12d] 横向滚动恒由最外层视口承担（纯 CSS，无 JS 状态，不会闪烁）");
+  ok(internals.staggerLeft(0, 20) === 2.5 && internals.staggerLeft(19, 20) === 97.5, "[12d] 名字中心严格落在刻度位置（不做边界钳制，否则压缩同层间距导致重叠）");
   // 加宽量随模型数变化：模型少时面板不该被拉长
   eq(internals.bandExtraFor(2, 200), 24, "[12d] 只有 2 个模型时几乎不加宽（钳到最小值）");
   eq(internals.bandExtraFor(20, 200), 200, "[12d] 20 个模型时加宽到上限");
@@ -1428,16 +1428,16 @@ section("12d. 模型名跨滑轨上下两层交错");
   ok(css.includes("transform:translateX(-50%)"), "[12d] 交错模式名字以刻度中心为基准居中");
   ok(css.includes("18%,transparent") && css.includes("inset 0 0 0 1px"), "[12d] 选中档位高亮加强（底色 + 描边）");
   ok(css.includes("data-overflow='long'"), "[12d] 超长单词仍有兜底换行");
-  // 纯函数：边缘档位钳制在内容区内（名字宽两格，居中会溢出左右各一格）
-  const clamp = internals.clampBandLeft;
-  eq(clamp(0, 20), 5, "[12d] 首档中心钳到半格处（不溢出左边界）");
-  eq(clamp(19, 20), 95, "[12d] 末档中心钳到 100-半格处（不溢出右边界）");
-  eq(clamp(10, 20), 52.5, "[12d] 中间档位保持自己的刻度中心");
-  eq(clamp(0, 1), 50, "[12d] 单档退化为居中");
-  eq(clamp(0, 0), 50, "[12d] 空列表退化为居中");
+  // 纯函数：交错模式不做边界钳制（钳制会压缩同层间距，反而导致重叠）
+  const leftOf = internals.staggerLeft;
+  eq(leftOf(0, 20), 2.5, "[12d] 首档中心就在自己的刻度上");
+  eq(leftOf(19, 20), 97.5, "[12d] 末档中心就在自己的刻度上");
+  eq(leftOf(10, 20), 52.5, "[12d] 中间档位保持自己的刻度中心");
+  eq(leftOf(0, 1), 50, "[12d] 单档居中");
+  eq(leftOf(0, 0), 50, "[12d] 空列表居中");
 }
 
-
+section("13. 宿主半边（lib/index.js）");
 {
   const hostPath = fileURLToPath(new URL("../lib/index.js", import.meta.url));
   const mod = await import(pathToFileURL(hostPath).href + `?t=${Date.now()}`);
