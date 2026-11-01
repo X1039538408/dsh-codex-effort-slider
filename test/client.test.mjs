@@ -1152,8 +1152,8 @@ function __clickLabel(node) { node.fire("onClick", {}); }
     }),
   });
   const menu = ctx.menu.menu;
-  // 原中心 300+100=400，加宽后 200+220(右栏)+280(名带) = 700 → 目标左 400-350 = 50
-  eq(menu.style.left, "50px", "[12c] 加宽后菜单钉在加宽前的中心");
+  // 原中心 300+100=400，加宽后 200+220(右栏)+160(名带) = 580 → 目标左 400-290 = 110
+  eq(menu.style.left, "110px", "[12c] 加宽后菜单钉在加宽前的中心");
   eq(menu.style.right, "auto", "[12c] 钉中心时清掉右侧锚定");
   ctx.react.unmount();
 }
@@ -1398,13 +1398,17 @@ section("12d. 模型名跨滑轨上下两层交错");
   eq(bands[0].getAttribute("data-band"), "top", "[12d] 第一个名字带是上层");
   eq(bands[1].getAttribute("data-band"), "bottom", "[12d] 第二个名字带是下层");
   eq(bands[0].getAttribute("data-stagger"), "2", "[12d] 交错层数标记为 2");
-  const topLabels = bands[0].querySelectorAll('span[data-ces-part="model-label"]');
-  const bottomLabels = bands[1].querySelectorAll('span[data-ces-part="model-label"]');
+  const topLabels = bands[0].querySelectorAll('span[data-ces-part="model-cell"]');
+  const bottomLabels = bands[1].querySelectorAll('span[data-ces-part="model-cell"]');
   eq(topLabels.length, 10, "[12d] 上层 10 个名字（偶数档）");
   eq(bottomLabels.length, 10, "[12d] 下层 10 个名字（奇数档）");
   eq(topLabels[0].getAttribute("data-index"), "0", "[12d] 上层首个是第 0 档");
   eq(bottomLabels[0].getAttribute("data-index"), "1", "[12d] 下层首个是第 1 档");
   eq(topLabels[1].getAttribute("data-index"), "2", "[12d] 上层第二个是第 2 档");
+  // 每个 cell 里有连接线 + 名字标签（标识名字属于哪一档）
+  const conns = bands[0].querySelectorAll('span[data-ces-part="model-conn"]');
+  eq(conns.length, 10, "[12d] 上层每个名字都有一条连接线");
+  eq(bands[0].querySelectorAll('span[data-ces-part="model-label"]').length, 10, "[12d] 上层每个 cell 内仍有名字标签");
   ctx.react.unmount();
 }
 {
@@ -1414,7 +1418,9 @@ section("12d. 模型名跨滑轨上下两层交错");
   ok(css.includes(".ces-name-token{white-space:nowrap}"), "[12d] 词内不断行（竖排单字的直接原因）");
   ok(css.includes("word-break:keep-all"), "[12d] 名字按词边界换行");
   ok(css.includes(".ces-named-labels--band"), "[12d] 交错 band 有独立样式");
-  ok(css.includes("200% / var(--ces-count) - 10px"), "[12d] 交错模式每个名字占两格宽（减去间隙）");
+  ok(css.includes("width:max-content") && css.includes("max-width:calc(200% / var(--ces-count))"), "[12d] 名字按内容自适应宽度，最多占两格");
+  ok(css.includes(".ces-named-conn") && css.includes("flex:0 0 "), "[12d] 刻度到名字有连接线标识归属");
+  ok(css.includes(".ces-named-cell{position:absolute"), "[12d] 交错模式用 cell 对准刻度中心");
   ok(css.includes("transform:translateX(-50%)"), "[12d] 交错模式名字以刻度中心为基准居中");
   ok(css.includes("18%,transparent") && css.includes("inset 0 0 0 1px"), "[12d] 选中档位高亮加强（底色 + 描边）");
   ok(css.includes("data-overflow='long'"), "[12d] 超长单词仍有兜底换行");

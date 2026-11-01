@@ -75,9 +75,15 @@ body[data-ds-dark-theme] .ces-set{background:var(--dsw-alias-bg-base,#24262c);co
 .mock-name-stack{display:block;width:100%}
 .mock-named-content{box-sizing:border-box;width:100%;container-type:inline-size;container-name:mock-rail}
 .mock-named-labels{display:grid;grid-template-columns:repeat(var(--mock-count),minmax(0,1fr));align-items:stretch;width:100%}
-/* 跨滑轨两层交错（模型数多、单层一格放不下一个词时启用）：偶数档在上、奇数档在下 */
-.mock-named-labels--band{display:block;position:relative;box-sizing:border-box;width:100%;height:36px}
-.mock-named-labels--band .mock-named-label{position:absolute;top:0;transform:translateX(-50%);width:calc(200% / var(--mock-count) - 10px);min-height:36px;padding:0;overflow-wrap:normal;word-break:keep-all;hyphens:none;box-sizing:border-box;display:flex;align-items:center;justify-content:center}
+/* 跨滑轨两层交错（模型数多、单层一格放不下一个词时启用）：偶数档在上、奇数档在下。
+   cell 对准刻度中心并带一条连接线；名字按内容自适应宽度（最多两格），横向不铺满。 */
+.mock-named-labels--band{display:block;position:relative;box-sizing:border-box;width:100%;height:44px}
+.mock-named-cell{position:absolute;top:0;transform:translateX(-50%);width:calc(100% / var(--mock-count));height:100%;box-sizing:border-box;display:flex;flex-direction:column;align-items:center;justify-content:flex-end;padding:0 5px}
+.mock-named-labels--band:last-child .mock-named-cell{flex-direction:column-reverse;justify-content:flex-start}
+.mock-named-conn{display:block;flex:0 0 6px;width:1px;background:color-mix(in srgb,var(--dsw-alias-label-primary) 22%,transparent);pointer-events:none}
+.mock-named-cell[data-selected='1'] .mock-named-conn{background:var(--mock-pick)}
+.mock-named-cell .mock-named-label{width:max-content;max-width:calc(200% / var(--mock-count));min-height:0;padding:0;display:block;box-sizing:border-box;font-size:9px;line-height:11px;text-align:center}
+.mock-named-cell[data-selected='1'] .mock-named-label{border-radius:6px;color:var(--mock-pick);font-weight:600;box-shadow:inset 0 0 0 1px color-mix(in srgb,var(--mock-pick) 42%,transparent);background:color-mix(in srgb,var(--mock-pick) 18%,transparent)}
 .mock-name-text{display:block;width:100%;min-width:0;text-align:center;word-break:keep-all;overflow-wrap:break-word}
 .mock-name-token{white-space:nowrap}
 .mock-named-labels[data-overflow='long'] .mock-named-label{overflow-wrap:anywhere}
@@ -87,7 +93,6 @@ body[data-ds-dark-theme] .ces-set{background:var(--dsw-alias-bg-base,#24262c);co
 @container mock-rail (max-width:600px){.mock-named-labels[data-density='compact'] .mock-named-label{font-size:9px;line-height:10px}.mock-named-labels[data-density='dense'] .mock-named-label{font-size:8px;line-height:9px}}
 @container mock-rail (max-width:400px){.mock-named-labels[data-density='compact'] .mock-named-label{font-size:8px;line-height:9px}.mock-named-labels[data-density='dense'] .mock-named-label{font-size:8px;line-height:9px}}
 .mock-named-label[data-selected='1']{width:calc(100% - 4px);justify-self:center;border-radius:6px;color:var(--mock-pick);font-weight:600;box-shadow:inset 0 0 0 1px color-mix(in srgb,var(--mock-pick) 42%,transparent);background:color-mix(in srgb,var(--mock-pick) 18%,transparent)}
-.mock-named-labels--band .mock-named-label[data-selected='1']{width:calc(200% / var(--mock-count) - 10px);background-clip:content-box;padding:0 4px}
 .mock-named-label:hover{background:color-mix(in srgb,var(--mock-pick) 7%,transparent)}
 .mock-model-hit{position:relative;display:block;height:20px;touch-action:none;user-select:none;border-radius:6px}
 .mock-model-block{padding:1px 8px 3px}
@@ -955,13 +960,26 @@ render();
       label.setAttribute("data-selected", index === selected ? "1" : "0");
       label.title = name;
       if (twoBands) {
+        /* cell 负责对准刻度中心；内部是「连接线 + 名字」，名字按内容自适应宽度。 */
+        const cell = document.createElement("span");
+        cell.className = "mock-named-cell";
+        cell.setAttribute("data-index", String(index));
+        cell.setAttribute("data-band", index % 2 === 0 ? "top" : "bottom");
+        cell.setAttribute("data-selected", index === selected ? "1" : "0");
+        const pos = ((index + 0.5) / list.length) * 100;
+        const halfCell = 100 / list.length;
+        cell.style.left = Math.max(halfCell, Math.min(100 - halfCell, pos)) + "%";
+        const conn = document.createElement("span");
+        conn.className = "mock-named-conn";
+        cell.appendChild(conn);
         /* 词内不断行：只在分隔符处换行，避免竖排单字。
            再包一层 block 文本容器，否则 flex 会把每个 token 当成独立项不折行。 */
         const textWrap = document.createElement("span");
         textWrap.className = "mock-name-text";
-        for (const piece of name.split(/([-\s./·_])/)) {
+        for (const piece of name.split(/([-\s·_])/)) {
           if (!piece) continue;
-          if (/^[-\s./·_]$/.test(piece)) {
+          if (/^[-\s·_]$/.test(piece)) {
+            if (piece !== " ") continue;
             textWrap.appendChild(document.createTextNode(piece));
           } else {
             const token = document.createElement("span");
@@ -971,13 +989,8 @@ render();
           }
         }
         label.appendChild(textWrap);
-        /* 名字宽两格，居中会向左右各溢出半格：首末档必须内收（与插件 clampBandLeft 一致）。 */
-        const pos = ((index + 0.5) / list.length) * 100;
-        const halfCell = 100 / list.length;
-        const left = Math.max(halfCell, Math.min(100 - halfCell, pos));
-        label.style.left = left + "%";
-        label.setAttribute("data-band", index % 2 === 0 ? "top" : "bottom");
-        (index % 2 === 0 ? modelLabels : modelLabelsBottom).appendChild(label);
+        cell.appendChild(label);
+        (index % 2 === 0 ? modelLabels : modelLabelsBottom).appendChild(cell);
       } else {
         label.textContent = name;
         modelLabels.appendChild(label);
