@@ -88,7 +88,7 @@ body[data-ds-dark-theme] .ces-set{background:var(--dsw-alias-bg-base,#24262c);co
 .mock-name-token{white-space:nowrap}
 .mock-named-labels[data-overflow='long'] .mock-named-label{overflow-wrap:anywhere}
 .mock-named-label{box-sizing:border-box;width:100%;min-width:0;max-width:100%;min-height:18px;padding:0 2px 1px;display:flex;align-items:center;justify-content:center;text-align:center;white-space:normal;word-break:keep-all;overflow-wrap:break-word;hyphens:none;font-size:10px;line-height:11px;color:var(--dsw-alias-label-secondary);cursor:pointer;border-radius:4px;transition:background-color .12s ease,color .12s ease}
-.mock-named-labels[data-density='compact'] .mock-named-label{font-size:10px;line-height:10px}
+.mock-named-labels[data-density='compact'] .mock-named-label:not([data-band]){font-size:10px;line-height:10px}
 .mock-named-labels[data-density='dense'] .mock-named-label{font-size:9px;line-height:9px}
 @container mock-rail (max-width:600px){.mock-named-labels[data-density='compact'] .mock-named-label{font-size:9px;line-height:10px}.mock-named-labels[data-density='dense'] .mock-named-label{font-size:8px;line-height:9px}}
 @container mock-rail (max-width:400px){.mock-named-labels[data-density='compact'] .mock-named-label{font-size:8px;line-height:9px}.mock-named-labels[data-density='dense'] .mock-named-label{font-size:8px;line-height:9px}}
