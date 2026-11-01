@@ -1152,8 +1152,9 @@ function __clickLabel(node) { node.fire("onClick", {}); }
     }),
   });
   const menu = ctx.menu.menu;
-  // 原中心 300+100=400，加宽后 200+220(右栏)+160(名带) = 580 → 目标左 400-290 = 110
-  eq(menu.style.left, "110px", "[12c] 加宽后菜单钉在加宽前的中心");
+  // 原中心 300+100=400；加宽量按模型数动态算：3 个模型 × 96 - host 200 = 88，
+  // 菜单宽 200+220+88 = 508 → 目标左 400-254 = 146
+  eq(menu.style.left, "146px", "[12c] 加宽后菜单钉在加宽前的中心");
   eq(menu.style.right, "auto", "[12c] 钉中心时清掉右侧锚定");
   ctx.react.unmount();
 }
@@ -1417,8 +1418,12 @@ section("12d. 模型名跨滑轨上下两层交错");
   ok(css.includes("word-break:keep-all"), "[12d] 名字按词边界换行");
   ok(css.includes(".ces-named-labels--band"), "[12d] 交错 band 有独立样式");
   ok(css.includes("width:max-content") && css.includes("max-width:calc(200% / var(--ces-count))"), "[12d] 名字按内容自适应宽度，最多占两格");
-  ok(css.includes(".ces-named-content[data-narrow='1']{overflow-x:auto"), "[12d] 面板过窄时横向滚动，不把名字挤成竖排单字");
+  ok(css.includes(".ces-named-viewport[data-narrow='1']{overflow-x:auto"), "[12d] 窄屏由最外层视口横向滚动（滚动条不夹在两排名字中间）");
   ok(internals.narrowRailFor(520, 20) === false && internals.narrowRailFor(340, 20) === true, "[12d] 只有手机竖屏那种窄度才触发横向滚动");
+  // 加宽量随模型数变化：模型少时面板不该被拉长
+  eq(internals.bandExtraFor(2, 200), 24, "[12d] 只有 2 个模型时几乎不加宽（钳到最小值）");
+  eq(internals.bandExtraFor(20, 200), 200, "[12d] 20 个模型时加宽到上限");
+  eq(internals.bandExtraFor(0, 360), 24, "[12d] 没有模型时不加宽");
   ok(!css.includes(".ces-named-conn"), "[12d] 不再画连接线（会挤窄文字并增加高度）");
   ok(css.includes("transform:translateX(-50%)"), "[12d] 交错模式名字以刻度中心为基准居中");
   ok(css.includes("18%,transparent") && css.includes("inset 0 0 0 1px"), "[12d] 选中档位高亮加强（底色 + 描边）");
