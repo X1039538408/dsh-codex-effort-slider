@@ -1393,21 +1393,22 @@ section("12d. 模型名跨滑轨上下两层交错");
     host: { snapshot: { current: { provider: "p0", model: "m0" }, groups, status: "ready", failures: [], pending: null, error: null } },
   });
   const content = ctx.menu.menu.querySelector('div[data-ces-part="model-viewport"]').children[0];
-  const order = Array.from(content.children).map((node) => node.getAttribute("data-band") || node.getAttribute("data-ces-part"));
-  eq(order.join(">"), "top>model-track>bottom", "[12d] 滑轨正好夹在上下两层名字之间");
+  /* 20 个模型在默认（量不到宽度 → 回退 520）下格宽 26px ≥ 24px，
+     所以仍走「交错两层」；滚动只在更窄的手机竖屏才触发。
+     三态判定本身另有纯函数单测覆盖。 */
+  eq(content.getAttribute("data-scroll-rail") ?? null, null, "[12d] 26px/格仍走交错，不滚动");
+  eq(content.children.length, 3, "[12d] 交错模式：上带 + 滑轨 + 下带三个子节点");
   const bands = [content.children[0], content.children[2]];
   eq(bands[0].getAttribute("data-band"), "top", "[12d] 第一个名字带是上层");
   eq(bands[1].getAttribute("data-band"), "bottom", "[12d] 第二个名字带是下层");
-  eq(bands[0].getAttribute("data-stagger"), "2", "[12d] 交错层数标记为 2");
   const topLabels = Array.from(bands[0].querySelectorAll('span[data-ces-part="model-label"]'));
   const bottomLabels = Array.from(bands[1].querySelectorAll('span[data-ces-part="model-label"]'));
   eq(topLabels.length, 10, "[12d] 上层 10 个名字（偶数档）");
   eq(bottomLabels.length, 10, "[12d] 下层 10 个名字（奇数档）");
   eq(topLabels[0].getAttribute("data-index"), "0", "[12d] 上层首个是第 0 档");
   eq(bottomLabels[0].getAttribute("data-index"), "1", "[12d] 下层首个是第 1 档");
-  eq(topLabels[1].getAttribute("data-index"), "2", "[12d] 上层第二个是第 2 档");
-  eq(topLabels[0].getAttribute("data-band"), "top", "[12d] 上层名字带 top 标记");
-  eq(bottomLabels[0].getAttribute("data-band"), "bottom", "[12d] 下层名字带 bottom 标记");
+  eq(topLabels[0].getAttribute("data-edge"), "start", "[12d] 首档贴边对齐（不会被裁）");
+  eq(bottomLabels[9].getAttribute("data-edge"), "end", "[12d] 末档贴边对齐（不会被裁）");
   ctx.react.unmount();
 }
 {
@@ -1435,6 +1436,23 @@ section("12d. 模型名跨滑轨上下两层交错");
   eq(leftOf(10, 20), 52.5, "[12d] 中间档位保持自己的刻度中心");
   eq(leftOf(0, 1), 50, "[12d] 单档居中");
   eq(leftOf(0, 0), 50, "[12d] 空列表居中");
+
+  // 三态自动切换：单层等分 / 交错两层 / 单层横向滚动
+  const rail = internals.scrollRailFor;
+  ok(rail(600, 2) === false, "[12d] 模型少、宽度足 → 单层等分（不滚动）");
+  ok(rail(560, 20) === false, "[12d] 20 模型 560px（格宽 28px）仍走交错两层");
+  ok(rail(340, 20) === true, "[12d] 手机竖屏 20 模型（格宽 17px）→ 单层横向滚动");
+  ok(rail(390, 6) === false, "[12d] 手机 6 模型（格宽 65px）不滚动");
+  ok(rail(0, 20) === false, "[12d] 未量到宽度时不滚动（首帧不能闪）");
+  ok(rail(300, 1) === false, "[12d] 单个模型不滚动");
+
+  // 首末档贴边：不会因 translateX(-50%) 越界被裁
+  const place = internals.staggerPlacement;
+  eq(place(0, 20).edge, "start", "[12d] 首档贴左边界对齐（避免被裁）");
+  eq(place(19, 20).edge, "end", "[12d] 末档贴右边界对齐（避免被裁）");
+  eq(place(5, 20).edge, null, "[12d] 中间档居中");
+  eq(place(5, 20).capRatio, 2, "[12d] 中间档可用两格宽");
+  ok(place(0, 20).capRatio < 2, "[12d] 首末档收窄，避免压到邻居");
 }
 
 section("13. 宿主半边（lib/index.js）");

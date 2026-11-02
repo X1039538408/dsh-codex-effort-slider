@@ -103,6 +103,13 @@ function bandExtraFor(count, hostWidth) {
   if (!(wanted > REAL.MODEL_BAND_EXTRA_MIN)) return REAL.MODEL_BAND_EXTRA_MIN;
   return wanted > REAL.MODEL_BAND_EXTRA_MAX ? REAL.MODEL_BAND_EXTRA_MAX : Math.round(wanted);
 }
+const NAME_SCROLL_SLOT = 96;
+/* 与插件一致：每格 < 24px 才放弃交错改滚动 */
+const NAME_SCROLL_MIN_CELL = 24;
+function scrollRailFor(availableWidth, count) {
+  if (!(count > 1) || !(availableWidth > 0)) return false;
+  return availableWidth / count < NAME_SCROLL_MIN_CELL;
+}
 function staggerRowsFor(availableWidth, count) {
   if (!(count > 1)) return 1;
   const slot = availableWidth / count;
@@ -136,15 +143,35 @@ function tokenize(label) {
 
 function buildPage(models, contentWidth) {
   const N = models.length;
-  const stagger = staggerRowsFor(contentWidth, N);
+  const scrollRail = scrollRailFor(contentWidth, N);
+  const stagger = scrollRail ? 1 : staggerRowsFor(contentWidth, N);
   const bands = stagger >= 2;
-  /* 与插件一致：宽度上限用 JS 算成 px，写进内联 --ces-cap */
-  const cap = Math.max(24, Math.floor((contentWidth / Math.max(1, N)) * 2 - REAL.NAMED_BAND_GAP));
-  const label = (name, i) => '<span class="ces-named-label" data-index="' + i + '"'
-    + (bands ? ' data-band="' + (i % 2 ? "bottom" : "top") + '"' : "")
-    + (i === 0 ? ' data-selected="1"' : "")
-    + (bands ? ' style="left:' + staggerLeft(i, N) + '%;--ces-cap:' + cap + 'px"' : "")
-    + '><span class="ces-name-text">' + tokenize(name) + "</span></span>";
+  /* 与插件一致：首末档贴边对齐 + 收窄到 1.5 格，其余居中占 2 格。 */
+  /* 滚动模式实际布局宽 = max(容器宽, 模型数×两格)，与插件保持一致 */
+  const layoutW = Math.max(contentWidth, N * REAL.NAMED_MIN_CELL * 2);
+  const cellPx = layoutW / Math.max(1, N);
+  const placement = (i) => {
+    if (!(N > 1)) return { edge: null, capRatio: 2 };
+    if (i === 0) return { edge: "start", capRatio: 1 };
+    if (i === N - 1) return { edge: "end", capRatio: 1 };
+    return { edge: null, capRatio: 2 };
+  };
+  const label = (name, i) => {
+    const pl = placement(i);
+    const cap = Math.max(REAL.NAMED_MIN_CELL, Math.floor(cellPx * pl.capRatio - REAL.NAMED_BAND_GAP));
+    let style = "--ces-cap:" + cap + "px";
+    if (bands) {
+      if (pl.edge === "start") style = "left:0;" + style;
+      else if (pl.edge === "end") style = "right:0;left:auto;" + style;
+      else style = "left:" + staggerLeft(i, N) + "%;" + style;
+    }
+    return '<span class="ces-named-label" data-index="' + i + '"'
+      + (bands ? ' data-band="' + (i % 2 ? "bottom" : "top") + '"' : "")
+      + (pl.edge && bands ? ' data-edge="' + pl.edge + '"' : "")
+      + (i === 0 ? ' data-selected="1"' : "")
+      + (bands ? ' style="' + style + '"' : "")
+      + '><span class="ces-name-text">' + tokenize(name) + "</span></span>";
+  };
   const ticks = models.map((_, i) => '<div class="ces-named-tick" style="left:' + (((i + 0.5) / N) * 100) + '%"></div>').join("");
 
   let inner;
@@ -165,7 +192,7 @@ ${REAL.CSS}
 </style>
 <div class="ces-named-section" style="width:${contentWidth}px">
   <div class="ces-named-viewport" id="vp">
-    <div class="ces-named-content" id="content" ${bands ? 'data-stagger="1"' : ""} style="--ces-count:${N}">
+    <div class="ces-named-content" id="content" ${bands ? 'data-stagger="1"' : ""} ${scrollRail ? 'data-scroll-rail="1"' : ""} style="--ces-count:${N}">
       ${inner}
     </div>
   </div>
@@ -272,8 +299,19 @@ for (const screen of SCREENS) {
     scenarios += 1;
     const models = provider.models;
     const extra = bandExtraFor(models.length, screen.hostWidth);
-    const contentW = screen.hostWidth + extra;
-    const stagger = staggerRowsFor(contentW, models.length);
+    const PROVIDER_COLUMN_WIDTH = 220;
+    const MENU_EDGE_MARGIN = 8;
+    /* 复刻插件的两栏判据：只看视口放不放得下（放不下就走 stacked，
+       供应商栏落到下方，模型区**不再**被右栏吃掉 220px）。
+       手机上正是走 stacked —— 与真机截图一致。 */
+    const wantPanel = screen.hostWidth + PROVIDER_COLUMN_WIDTH + extra;
+    const needed = wantPanel + MENU_EDGE_MARGIN * 2;
+    const side = screen.viewport >= needed;
+    const maxPanel = Math.max(240, screen.viewport - MENU_EDGE_MARGIN * 2);
+    const panelW = side ? Math.min(wantPanel, maxPanel) : screen.hostWidth;
+    const contentW = side ? Math.max(120, panelW - PROVIDER_COLUMN_WIDTH) : screen.hostWidth;
+    const scrollRail = scrollRailFor(contentW, models.length);
+    const stagger = scrollRail ? 1 : staggerRowsFor(contentW, models.length);
     const file = join(dir, "s-" + screen.key + "-" + provider.id + ".html");
     const pageHtml = buildPage(models, contentW);
     writeFileSync(file, pageHtml, "utf8");
@@ -299,6 +337,31 @@ for (const screen of SCREENS) {
       console.log("    [debug] leftAttrs=" + Array.from({length: labelList.length}, (_, k) => labelList[k].i + "=" + labelList[k].x).join(","));
     }
     check("名字全部渲染", labelList.length === models.length, "实际 " + labelList.length + " / 期望 " + models.length);
+
+    /* 名字不得竖排：每个名字的行数 = 高度 / 行高，超过 4 行说明被压成竖排单字
+       （手机竖屏最常见的观感故障）。 */
+    let vertical = null;
+    for (const l of labelList) {
+      const lines = Math.round(l.h / 11);
+      if (lines > 5) { vertical = "#" + l.i + " 折成 " + lines + " 行（竖排），高 " + l.h + "px"; break; }
+    }
+    check("名字不竖排（行数 ≤ 5）", vertical === null, vertical || "");
+
+    /* 面板不得宽过屏幕：手机上官方菜单接近满宽，再加右栏就会被裁掉右侧。 */
+    check("面板不宽过屏幕", panelW <= maxPanel + 0.5,
+      "面板 " + panelW + "px > 可用 " + maxPanel + "px");
+
+    /* 首末名字必须完整可见：名字以刻度中心居中，首末档容易越界被裁
+       （实测手机上 `DeepSeek` 被切成 `eepSeek`）。 */
+    let clippedEdge = null;
+    for (const l of labelList) {
+      if (l.x < -0.6) { clippedEdge = "#" + l.i + " 左侧越界 " + (-l.x).toFixed(1) + "px（名字被裁）"; break; }
+      if (l.right > snap.contentW + 0.6) {
+        clippedEdge = "#" + l.i + " 右侧越界 " + (l.right - snap.contentW).toFixed(1) + "px（名字被裁）";
+        break;
+      }
+    }
+    check("首末名字完整可见（不被裁）", clippedEdge === null, clippedEdge || "");
 
     if (stagger >= 2) {
       const byBand = {};
@@ -342,6 +405,8 @@ for (const screen of SCREENS) {
     const failed = failures - before;
     console.log("  " + (failed === 0 ? "ok  " : "FAIL") + " " + provider.name
       + "（" + models.length + " 模型 / 内容 " + contentW + "px / " + (stagger >= 2 ? "两层" : "单层")
+      + (side ? " / 两栏" : " / 上下堆叠")
+      + (scrollRail ? " / 单层滚动" : (stagger >= 2 ? " / 两层" : " / 单层"))
       + (snap.scrollW > snap.clientW + 1 ? " / 横向滚动" : "") + "）");
   }
   console.log("");
