@@ -1099,7 +1099,13 @@ function __clickLabel(node) { node.fire("onClick", {}); }
   });
   const n = __namedNodes(ctx);
   eq(n.providerLabels.length, 9, "[12c] 九家供应商全部出现在同一条轨道");
-  eq(n.modelLabels.map((node) => node.textContent).join("|"), pixelModels.map((model) => model.name).join("|"), "[12c] 九个模型完整名称全部渲染");
+  /* 9 个模型在默认窄菜单下会切「交错两层」，DOM 顺序变成 上带(0,2,4,6,8) + 下带(1,3,5,7)；
+     断言「全部名字都渲染了」要看 data-index 排序，不能直接按 DOM 顺序比对。 */
+  const renderedByName = n.modelLabels
+    .slice()
+    .sort((a, b) => Number(a.getAttribute("data-index")) - Number(b.getAttribute("data-index")))
+    .map((node) => node.textContent);
+  eq(renderedByName.join("|"), pixelModels.map((model) => model.name).join("|"), "[12c] 九个模型完整名称全部渲染");
   eq(n.providerList.style["--ces-count"], 9, "[12c] 供应商竖列有九个等高停靠点");
   eq(n.modelViewport.children[0].children[0].style["--ces-count"], 9, "[12c] 模型列宽随九个刻度自适应");
   eq(n.providerList.getAttribute("data-density"), null, "[12c] 九家供应商仍用正常字号（不到 10 家不缩字）");
@@ -1373,8 +1379,11 @@ section("12d. 模型名跨滑轨上下两层交错");
     { id: "p0", name: "P0", models: tenModels },
     { id: "p1", name: "P1", models: [{ id: "x", name: "X" }] },
   ];
+  /* 真实菜单宽度 620px：可用宽度现在能算出来了（不再依赖回退值），
+     10 个模型 → 每格 62px ≥ 52px → 单层。 */
   const ctx = await setup({
     host: { snapshot: { current: { provider: "p0", model: "m0" }, groups, status: "ready", failures: [], pending: null, error: null } },
+    menuRect: { left: 0, top: 0, right: 620, bottom: 320, width: 620, height: 320 },
   });
   const content = ctx.menu.menu.querySelector('div[data-ces-part="model-viewport"]').children[0];
   eq(content.children.length, 2, "[12d] 十个模型：单层名字带 + 滑轨两个子节点");
@@ -1391,10 +1400,11 @@ section("12d. 模型名跨滑轨上下两层交错");
   ];
   const ctx = await setup({
     host: { snapshot: { current: { provider: "p0", model: "m0" }, groups, status: "ready", failures: [], pending: null, error: null } },
+    menuRect: { left: 0, top: 0, right: 620, bottom: 320, width: 620, height: 320 },
   });
   const content = ctx.menu.menu.querySelector('div[data-ces-part="model-viewport"]').children[0];
-  /* 20 个模型在默认（量不到宽度 → 回退 520）下格宽 26px ≥ 24px，
-     所以仍走「交错两层」；滚动只在更窄的手机竖屏才触发。
+  /* 620px 放 20 个 → 每格 31px ≥ 24px，所以走「交错两层」；
+     滚动只在更窄的手机竖屏（每格 <24px，或手机端 <44px）才触发。
      三态判定本身另有纯函数单测覆盖。 */
   eq(content.getAttribute("data-scroll-rail") ?? null, null, "[12d] 26px/格仍走交错，不滚动");
   eq(content.children.length, 3, "[12d] 交错模式：上带 + 滑轨 + 下带三个子节点");
@@ -1433,6 +1443,20 @@ section("12d. 模型名跨滑轨上下两层交错");
   eq(internals.bandExtraFor(0, 360), 24, "[12d] 没有模型时不加宽");
   ok(!css.includes(".ces-named-conn"), "[12d] 不再画连接线（会挤窄文字并增加高度）");
   ok(css.includes("transform:translateX(-50%)"), "[12d] 交错模式名字以刻度中心为基准居中");
+
+  /* 回归护栏：可用宽度必须**真的传到渲染层**。
+     历史 bug：effect 依赖里漏了 providerHost，首帧用回退宽度排版，
+     随后才被纠正 → 手机上先乱后正，看起来就是闪。
+     这里断言依赖列表包含 providerHost，且宽度确实是以 props 形式下发。 */
+  ok(/\},\s*\[currentModels\.length,\s*sessionId,\s*providerHost/.test(bundle),
+    "[12d] 宽度同步 effect 依赖 providerHost（栏挂上时立刻重算，不用回退值排版）");
+  ok(bundle.includes("availableBandWidth: availableWidth"), "[12d] 可用宽度以 props 下发到渲染层");
+  ok(/props\.availableBandWidth/.test(bundle), "[12d] 渲染层读取传入的可用宽度（而非自行测量）");
+
+  /* 回归护栏：堆叠模式临时给菜单加的 maxHeight/overflow 必须能被还原。
+     否则退出堆叠后官方菜单残留限高与滚动，后续布局全被它影响。 */
+  ok(bundle.includes("maxHeight: menu.style.maxHeight") && bundle.includes("overscrollBehavior: menu.style.overscrollBehavior"),
+    "[12d] 堆叠模式的滚动样式纳入快照（可还原）");
   ok(css.includes("18%,transparent") && css.includes("inset 0 0 0 1px"), "[12d] 选中档位高亮加强（底色 + 描边）");
   ok(css.includes("data-overflow='long'"), "[12d] 超长单词仍有兜底换行");
   // 纯函数：交错模式不做边界钳制（钳制会压缩同层间距，反而导致重叠）
