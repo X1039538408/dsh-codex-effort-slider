@@ -106,9 +106,12 @@ function bandExtraFor(count, hostWidth) {
 const NAME_SCROLL_SLOT = 96;
 /* 与插件一致：每格 < 24px 才放弃交错改滚动 */
 const NAME_SCROLL_MIN_CELL = 24;
-function scrollRailFor(availableWidth, count) {
+function scrollRailFor(availableWidth, count, viewportWidth) {
   if (!(count > 1) || !(availableWidth > 0)) return false;
-  return availableWidth / count < NAME_SCROLL_MIN_CELL;
+  if (availableWidth / count < NAME_SCROLL_MIN_CELL) return true;
+  const vp = viewportWidth > 0 ? viewportWidth : 0;
+  if (vp > 0 && vp <= 480) return availableWidth / count < 44;
+  return false;
 }
 function staggerRowsFor(availableWidth, count) {
   if (!(count > 1)) return 1;
@@ -143,7 +146,7 @@ function tokenize(label) {
 
 function buildPage(models, contentWidth) {
   const N = models.length;
-  const scrollRail = scrollRailFor(contentWidth, N);
+  const scrollRail = scrollRailFor(contentWidth, N, 0);
   const stagger = scrollRail ? 1 : staggerRowsFor(contentWidth, N);
   const bands = stagger >= 2;
   /* 与插件一致：首末档贴边对齐 + 收窄到 1.5 格，其余居中占 2 格。 */
@@ -309,8 +312,10 @@ for (const screen of SCREENS) {
     const side = screen.viewport >= needed;
     const maxPanel = Math.max(240, screen.viewport - MENU_EDGE_MARGIN * 2);
     const panelW = side ? Math.min(wantPanel, maxPanel) : screen.hostWidth;
-    const contentW = side ? Math.max(120, panelW - PROVIDER_COLUMN_WIDTH) : screen.hostWidth;
-    const scrollRail = scrollRailFor(contentW, models.length);
+    /* 与插件一致：名字区可用宽度是**纯计算**（官方内容 + 名带加宽），
+       堆叠模式下不受右栏影响，也绝不由测量 DOM 得出（那会形成闪烁反馈环）。 */
+    const contentW = side ? Math.max(120, panelW - PROVIDER_COLUMN_WIDTH) : screen.hostWidth + extra;
+    const scrollRail = scrollRailFor(contentW, models.length, screen.viewport);
     const stagger = scrollRail ? 1 : staggerRowsFor(contentW, models.length);
     const file = join(dir, "s-" + screen.key + "-" + provider.id + ".html");
     const pageHtml = buildPage(models, contentW);

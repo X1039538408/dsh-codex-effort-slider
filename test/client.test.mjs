@@ -1419,6 +1419,12 @@ section("12d. 模型名跨滑轨上下两层交错");
   ok(css.includes("word-break:keep-all"), "[12d] 名字按词边界换行");
   ok(css.includes(".ces-named-labels--band"), "[12d] 交错 band 有独立样式");
   ok(css.includes("width:var(--ces-cap)") && css.includes("max-width:var(--ces-cap)"), "[12d] 名字宽度由 JS 算成像素上限（两格减间隙），不依赖 CSS 变量里的百分比 calc");
+  /* 回归护栏：排版模式绝不能由「测量 DOM」驱动。
+     历史 bug：ResizeObserver 量宽度 → 宽度决定排版 → 排版改变尺寸 → 又触发测量，
+     形成反馈环，手机上疯狂闪烁甚至每个字单独一行。 */
+  ok(!internals.CSS.includes("ResizeObserver"), "[12d] 排版不依赖 ResizeObserver（避免测量反馈环导致闪烁）");
+  const bundle = readFileSync(fileURLToPath(new URL("../lib/client.js", import.meta.url)), "utf8");
+  ok(!/new Observer\(|new ResizeObserver\(/.test(bundle), "[12d] 源码不再创建 ResizeObserver 观察自身布局");
   ok(css.includes(".ces-named-viewport{width:100%;min-width:0;overflow-x:auto"), "[12d] 横向滚动恒由最外层视口承担（纯 CSS，无 JS 状态，不会闪烁）");
   ok(internals.staggerLeft(0, 20) === 2.5 && internals.staggerLeft(19, 20) === 97.5, "[12d] 名字中心严格落在刻度位置（不做边界钳制，否则压缩同层间距导致重叠）");
   // 加宽量随模型数变化：模型少时面板不该被拉长
